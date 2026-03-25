@@ -64,6 +64,7 @@ Filter by type:
 lgtmcli ds list --type loki
 lgtmcli ds list --type prometheus
 lgtmcli ds list --type tempo
+lgtmcli ds list --type postgres
 ```
 
 Use these UIDs with `--ds` in all query commands.
@@ -121,6 +122,16 @@ Get full trace by ID:
 lgtmcli traces get <trace_id> --ds tempo-prod
 ```
 
+## SQL (Postgres/MySQL/MSSQL datasources)
+
+Run read-only SQL against Grafana SQL datasources:
+
+```bash
+lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds pg-read-replica
+```
+
+The SQL command enforces read-only statements (for example `SELECT`, `WITH`, `SHOW`, `EXPLAIN`) and rejects write statements.
+
 ---
 
 ## 5) Output for scripts
@@ -132,6 +143,7 @@ lgtmcli ds list --json
 lgtmcli logs stats 'rate({service="api"}[5m])' --ds loki-prod --since 1h --step 1m --json
 lgtmcli metrics range 'up' --ds mimir-prod --since 15m --step 30s --json
 lgtmcli traces search '{}' --ds tempo-prod --since 1h --json
+lgtmcli sql query 'select now() as ts' --ds pg-read-replica --json
 ```
 
 ---
@@ -162,6 +174,8 @@ Commands with time ranges support either:
 - **traces**
   - `traces search`
   - `traces get`
+- **sql**
+  - `sql query`
 
 ### API routes used via Grafana datasource proxy
 
@@ -173,6 +187,9 @@ Commands with time ranges support either:
 - Traces
   - `/api/datasources/proxy/uid/<traces_uid>/api/search`
   - `/api/datasources/proxy/uid/<traces_uid>/api/v2/traces/<trace_id>`
+- SQL
+  - `/api/datasources/uid/<sql_uid>` (datasource metadata lookup)
+  - `/api/ds/query` (Grafana datasource query API)
 
 ---
 

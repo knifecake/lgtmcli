@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
     name = "lgtmcli",
     version,
     about = "CLI for Grafana LGTM",
-    after_help = "EXAMPLES:\n  lgtmcli auth status\n  lgtmcli ds list --type loki\n  lgtmcli logs query '{service=\"api\"}' --ds loki-prod --since 1h\n  lgtmcli logs stats 'quantile_over_time(0.95, ({host=\"app-1\", role=\"web\"} |= \"gunicorn.access\" | json | unwrap server_time_ms)[1m])' --ds loki-prod --since 1h --step 1m\n  lgtmcli metrics range 'rate(http_requests_total[5m])' --ds mimir-prod --since 1h --step 30s\n  lgtmcli traces search '{ status = error }' --ds tempo-prod --since 1h --json\n\nTIPS:\n  - Output defaults to table; use --json for scripts\n  - Use --ds with datasource UID from `lgtmcli ds list`"
+    after_help = "EXAMPLES:\n  lgtmcli auth status\n  lgtmcli ds list --type loki\n  lgtmcli logs query '{service=\"api\"}' --ds loki-prod --since 1h\n  lgtmcli logs stats 'quantile_over_time(0.95, ({host=\"app-1\", role=\"web\"} |= \"gunicorn.access\" | json | unwrap server_time_ms)[1m])' --ds loki-prod --since 1h --step 1m\n  lgtmcli metrics range 'rate(http_requests_total[5m])' --ds mimir-prod --since 1h --step 30s\n  lgtmcli traces search '{ status = error }' --ds tempo-prod --since 1h --json\n  lgtmcli sql query 'select id, email from users limit 20' --ds pg-read-replica\n\nTIPS:\n  - Output defaults to table; use --json for scripts\n  - Use --ds with datasource UID from `lgtmcli ds list`"
 )]
 pub struct Cli {
     /// Output JSON instead of human-readable table/text
@@ -38,6 +38,10 @@ pub enum Commands {
     Traces {
         #[command(subcommand)]
         command: TracesCommands,
+    },
+    Sql {
+        #[command(subcommand)]
+        command: SqlCommands,
     },
 }
 
@@ -229,4 +233,24 @@ pub struct TraceGetArgs {
     /// Traces datasource UID (Grafana datasource UID)
     #[arg(long = "ds", value_name = "UID")]
     pub datasource_uid: String,
+}
+
+#[derive(Subcommand)]
+pub enum SqlCommands {
+    /// Run a read-only SQL query against SQL datasources (postgres/mysql/mssql)
+    Query(SqlQueryArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct SqlQueryArgs {
+    /// SQL query (read-only)
+    pub query: String,
+
+    /// SQL datasource UID (Grafana datasource UID)
+    #[arg(long = "ds", value_name = "UID")]
+    pub datasource_uid: String,
+
+    /// Maximum number of rows to return in CLI output
+    #[arg(long, default_value_t = 200)]
+    pub limit: usize,
 }

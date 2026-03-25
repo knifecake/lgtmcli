@@ -44,6 +44,49 @@ impl GrafanaClient {
         Ok(datasources)
     }
 
+    pub fn fetch_datasource_by_uid(&self, uid: &str) -> Result<DataSource> {
+        let endpoint = format!(
+            "{}/api/datasources/uid/{}",
+            self.base_url.trim_end_matches('/'),
+            uid
+        );
+        let body = self.get_text(&endpoint, None, "fetching datasource by UID")?;
+
+        serde_json::from_str(&body).context("failed to parse datasource JSON")
+    }
+
+    pub fn query_datasource_sql(
+        &self,
+        datasource_uid: &str,
+        datasource_type: &str,
+        raw_sql: &str,
+    ) -> Result<Value> {
+        let endpoint = format!("{}/api/ds/query", self.base_url.trim_end_matches('/'));
+
+        let body = serde_json::json!({
+            "queries": [
+                {
+                    "refId": "A",
+                    "datasource": {
+                        "uid": datasource_uid,
+                        "type": datasource_type,
+                    },
+                    "rawSql": raw_sql,
+                    "rawQuery": true,
+                    "format": "table",
+                    "intervalMs": 1000,
+                    "maxDataPoints": 1000,
+                }
+            ],
+            "from": "now-1h",
+            "to": "now",
+        });
+
+        let response_body = self.post_json_text(&endpoint, &body, "querying SQL datasource")?;
+
+        serde_json::from_str(&response_body).context("failed to parse SQL query response JSON")
+    }
+
     pub fn query_loki_range(
         &self,
         datasource_uid: &str,
@@ -218,6 +261,23 @@ impl GrafanaClient {
         ensure_grafana_success(status, &body, action)?;
 
         Ok(body)
+    }
+
+    fn post_json_text(&self, endpoint: &str, body: &Value, action: &str) -> Result<String> {
+        let response = self
+            .http
+            .post(endpoint)
+            .bearer_auth(&self.token)
+            .json(body)
+            .send()
+            .with_context(|| format!("request to {endpoint} failed"))?;
+
+        let status = response.status();
+        let response_body = response.text().context("failed to read response body")?;
+
+        ensure_grafana_success(status, &response_body, action)?;
+
+        Ok(response_body)
     }
 }
 

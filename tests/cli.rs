@@ -1,5 +1,5 @@
 use assert_cmd::Command;
-use httpmock::Method::GET;
+use httpmock::Method::{GET, POST};
 use httpmock::MockServer;
 use predicates::prelude::*;
 use serde_json::Value;
@@ -367,6 +367,126 @@ fn metrics_range_json_returns_matrix_samples() {
     assert_eq!(payload["samples"][1]["value"], "0");
 
     metrics_mock.assert();
+}
+
+#[test]
+fn sql_query_json_returns_rows_and_truncates_with_limit() {
+    let server = MockServer::start();
+
+    let datasource_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/uid/pg-ro")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "id": 42,
+                "uid": "pg-ro",
+                "name": "Postgres Read Replica",
+                "type": "postgres",
+                "isDefault": false
+            }"#,
+            );
+    });
+
+    let query_mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/ds/query")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "results": {
+                    "A": {
+                        "frames": [
+                            {
+                                "schema": {
+                                    "fields": [
+                                        {"name": "id"},
+                                        {"name": "email"}
+                                    ]
+                                },
+                                "data": {
+                                    "values": [
+                                        [1, 2],
+                                        ["a@example.com", "b@example.com"]
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args([
+            "sql",
+            "query",
+            "select id, email from users order by id",
+            "--ds",
+            "pg-ro",
+            "--limit",
+            "1",
+            "--json",
+        ]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let payload: Value = serde_json::from_str(&stdout).expect("valid json output");
+
+    assert_eq!(payload["datasource_uid"], "pg-ro");
+    assert_eq!(payload["datasource_type"], "postgres");
+    assert_eq!(payload["row_count"], 1);
+    assert_eq!(payload["total_row_count"], 2);
+    assert_eq!(payload["truncated"], true);
+    assert_eq!(payload["rows"][0]["id"], "1");
+    assert_eq!(payload["rows"][0]["email"], "a@example.com");
+
+    datasource_mock.assert();
+    query_mock.assert();
+}
+
+#[test]
+fn sql_query_rejects_non_sql_datasource_types() {
+    let server = MockServer::start();
+
+    let datasource_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/uid/loki-prod")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "id": 7,
+                "uid": "loki-prod",
+                "name": "Loki Prod",
+                "type": "loki",
+                "isDefault": false
+            }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args(["sql", "query", "select 1", "--ds", "loki-prod"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "not a supported SQL datasource type",
+        ));
+
+    datasource_mock.assert();
 }
 
 #[test]
