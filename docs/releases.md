@@ -8,6 +8,8 @@ This project ships a single release channel:
 
 Stable releases are triggered by pushing a SemVer tag.
 
+The workflow enforces that `Cargo.toml`'s `[package].version` matches the tag (for example tag `v0.2.0` requires `version = "0.2.0"`).
+
 ```bash
 # choose next version
 git tag v0.2.0

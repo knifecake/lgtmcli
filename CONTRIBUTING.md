@@ -104,6 +104,7 @@ Human-readable table/text output may evolve more freely.
 Stable release command:
 
 ```bash
+# make sure Cargo.toml has version = "0.2.0"
 git tag v0.2.0
 git push origin v0.2.0
 ```

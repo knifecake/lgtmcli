@@ -9,8 +9,43 @@ permissions:
   contents: write
 
 jobs:
+  validate-version:
+    name: Validate tag matches Cargo.toml version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must look like vX.Y.Z (got: ${tag})" >&2
+            exit 1
+          fi
+
+          cargo_version="$(python3 - <<'PY'
+import pathlib, tomllib
+cargo = tomllib.loads(pathlib.Path('Cargo.toml').read_text())
+print(cargo['package']['version'])
+PY
+          )"
+
+          expected="v${cargo_version}"
+          if [[ "$tag" != "$expected" ]]; then
+            echo "Tag/Cargo.toml mismatch: tag=${tag}, Cargo.toml=${cargo_version}" >&2
+            exit 1
+          fi
+
+          echo "Version check passed: ${tag}"
+
   build:
     name: Build ${{ matrix.target }}
+    needs: validate-version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
