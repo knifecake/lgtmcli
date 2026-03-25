@@ -76,11 +76,11 @@ esac
 
 case "$os" in
   linux)
-    if [ "$arch" != "x86_64" ]; then
-      echo "Unsupported Linux architecture: $arch (supported: x86_64)" >&2
-      exit 1
+    if [ "$arch" = "x86_64" ]; then
+      target="x86_64-unknown-linux-musl"
+    else
+      target="aarch64-unknown-linux-musl"
     fi
-    target="x86_64-unknown-linux-musl"
     ext="tar.gz"
     ;;
   darwin)

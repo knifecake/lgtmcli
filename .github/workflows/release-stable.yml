@@ -48,6 +48,8 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
           - os: macos-14
             target: x86_64-apple-darwin
           - os: macos-14
@@ -68,7 +70,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install Linux musl tooling
-        if: matrix.target == 'x86_64-unknown-linux-musl'
+        if: endsWith(matrix.target, '-unknown-linux-musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build binary
