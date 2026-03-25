@@ -63,6 +63,8 @@ lgtmcli datasources list --type loki
 lgtmcli ds list --type prometheus
 ```
 
+Output defaults to human-readable table/text. Pass `--json` for machine-readable output.
+
 Planned:
 
 ```bash
@@ -85,10 +87,11 @@ Examples:
 cargo run -- auth status
 cargo run -- ds list
 cargo run -- ds list --type loki
+cargo run -- ds list --type loki --json
 
 # or after build:
 # lgtmcli auth status
-# lgtmcli ds list --type tempo
+# lgtmcli ds list --type tempo --json
 ```
 
 It requires:
