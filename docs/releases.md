@@ -29,11 +29,11 @@ That runs `.github/workflows/release-stable.yml` and publishes:
 Users can install the latest stable release with:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/knifecake/lgtmcli/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/knifecake/lgtmcli/master/scripts/install.sh | sh
 ```
 
 Pin to a specific tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/knifecake/lgtmcli/main/scripts/install.sh | sh -s -- --version v0.2.0
+curl -fsSL https://raw.githubusercontent.com/knifecake/lgtmcli/master/scripts/install.sh | sh -s -- --version v0.2.0
 ```

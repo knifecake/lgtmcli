@@ -19,7 +19,7 @@ A fast CLI for querying Grafana-backed **logs, metrics, traces, and SQL datasour
 ### Preferred: installer script (stable)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/knifecake/lgtmcli/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/knifecake/lgtmcli/master/scripts/install.sh | sh
 ```
 
 ### Build and install locally
