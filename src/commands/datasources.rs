@@ -14,9 +14,19 @@ pub struct DatasourceListResult {
 }
 
 pub fn list(ctx: &AppContext, ds_type: Option<String>) -> Result<DatasourceListResult> {
-    let mut datasources = ctx.grafana.fetch_datasources()?;
+    let datasources = ctx.grafana.fetch_datasources()?;
+    let datasources = filter_and_sort(datasources, ds_type.as_deref());
+    let count = datasources.len();
 
-    if let Some(filter) = ds_type.as_deref() {
+    Ok(DatasourceListResult {
+        ds_type,
+        count,
+        datasources,
+    })
+}
+
+fn filter_and_sort(mut datasources: Vec<DataSource>, ds_type: Option<&str>) -> Vec<DataSource> {
+    if let Some(filter) = ds_type {
         datasources.retain(|ds| ds.ds_type.eq_ignore_ascii_case(filter));
     }
 
@@ -27,13 +37,7 @@ pub fn list(ctx: &AppContext, ds_type: Option<String>) -> Result<DatasourceListR
         )
     });
 
-    let count = datasources.len();
-
-    Ok(DatasourceListResult {
-        ds_type,
-        count,
-        datasources,
-    })
+    datasources
 }
 
 impl TableOutput for DatasourceListResult {
@@ -58,5 +62,54 @@ impl TableOutput for DatasourceListResult {
                 if ds.is_default { "yes" } else { "no" }
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::filter_and_sort;
+    use crate::grafana::models::DataSource;
+
+    fn ds(id: i64, uid: &str, ds_type: &str, name: &str) -> DataSource {
+        DataSource {
+            id,
+            uid: uid.to_string(),
+            name: name.to_string(),
+            ds_type: ds_type.to_string(),
+            is_default: false,
+        }
+    }
+
+    #[test]
+    fn filter_by_type_is_case_insensitive() {
+        let input = vec![
+            ds(1, "loki-1", "loki", "Loki A"),
+            ds(2, "prom-1", "prometheus", "Prom A"),
+            ds(3, "loki-2", "Loki", "Loki B"),
+        ];
+
+        let result = filter_and_sort(input, Some("LOKI"));
+
+        assert_eq!(result.len(), 2);
+        assert!(
+            result
+                .iter()
+                .all(|d| d.ds_type.eq_ignore_ascii_case("loki"))
+        );
+    }
+
+    #[test]
+    fn sorts_by_type_then_name_case_insensitive() {
+        let input = vec![
+            ds(1, "prom-z", "prometheus", "zeta"),
+            ds(2, "loki-b", "loki", "Beta"),
+            ds(3, "loki-a", "loki", "alpha"),
+            ds(4, "prom-a", "prometheus", "Alpha"),
+        ];
+
+        let result = filter_and_sort(input, None);
+        let ordered_uids: Vec<&str> = result.iter().map(|d| d.uid.as_str()).collect();
+
+        assert_eq!(ordered_uids, vec!["loki-a", "loki-b", "prom-a", "prom-z"]);
     }
 }
