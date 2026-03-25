@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DataSource {
@@ -29,4 +30,23 @@ pub struct LokiStreamsData {
 pub struct LokiStream {
     pub stream: BTreeMap<String, String>,
     pub values: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PrometheusQueryResponse {
+    pub status: String,
+    pub data: PrometheusData,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PrometheusData {
+    #[serde(rename = "resultType")]
+    pub result_type: String,
+    pub result: Value,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TempoSearchResponse {
+    #[serde(default)]
+    pub traces: Vec<Value>,
 }

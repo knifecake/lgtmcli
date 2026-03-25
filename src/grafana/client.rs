@@ -3,10 +3,14 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use reqwest::StatusCode;
 use reqwest::blocking::Client;
+use serde_json::Value;
 
 use crate::app::GrafanaConfig;
 
-use super::models::{DataSource, LokiQueryRangeResponse, LokiStream};
+use super::models::{
+    DataSource, LokiQueryRangeResponse, LokiStream, PrometheusData, PrometheusQueryResponse,
+    TempoSearchResponse,
+};
 
 const REQUEST_TIMEOUT_SECS: u64 = 15;
 
@@ -78,6 +82,95 @@ impl GrafanaClient {
         Ok(response.data.streams)
     }
 
+    pub fn query_prometheus_instant(
+        &self,
+        datasource_uid: &str,
+        query: &str,
+        time_seconds: &str,
+    ) -> Result<PrometheusData> {
+        let endpoint = format!(
+            "{}/api/datasources/proxy/uid/{}/api/v1/query",
+            self.base_url.trim_end_matches('/'),
+            datasource_uid
+        );
+
+        let params = vec![
+            ("query", query.to_string()),
+            ("time", time_seconds.to_string()),
+        ];
+
+        let body = self.get_text(&endpoint, Some(&params), "querying Prometheus instant API")?;
+
+        parse_prometheus_response(&body)
+    }
+
+    pub fn query_prometheus_range(
+        &self,
+        datasource_uid: &str,
+        query: &str,
+        start_seconds: &str,
+        end_seconds: &str,
+        step_seconds: &str,
+    ) -> Result<PrometheusData> {
+        let endpoint = format!(
+            "{}/api/datasources/proxy/uid/{}/api/v1/query_range",
+            self.base_url.trim_end_matches('/'),
+            datasource_uid
+        );
+
+        let params = vec![
+            ("query", query.to_string()),
+            ("start", start_seconds.to_string()),
+            ("end", end_seconds.to_string()),
+            ("step", step_seconds.to_string()),
+        ];
+
+        let body = self.get_text(&endpoint, Some(&params), "querying Prometheus range API")?;
+
+        parse_prometheus_response(&body)
+    }
+
+    pub fn search_tempo(
+        &self,
+        datasource_uid: &str,
+        query: &str,
+        start_seconds: &str,
+        end_seconds: &str,
+        limit: u32,
+    ) -> Result<Vec<Value>> {
+        let endpoint = format!(
+            "{}/api/datasources/proxy/uid/{}/api/search",
+            self.base_url.trim_end_matches('/'),
+            datasource_uid
+        );
+
+        let params = vec![
+            ("q", query.to_string()),
+            ("start", start_seconds.to_string()),
+            ("end", end_seconds.to_string()),
+            ("limit", limit.to_string()),
+        ];
+
+        let body = self.get_text(&endpoint, Some(&params), "searching traces in Tempo")?;
+
+        let response: TempoSearchResponse =
+            serde_json::from_str(&body).context("failed to parse Tempo search response JSON")?;
+
+        Ok(response.traces)
+    }
+
+    pub fn fetch_trace(&self, datasource_uid: &str, trace_id: &str) -> Result<Value> {
+        let endpoint = format!(
+            "{}/api/datasources/proxy/uid/{}/api/v2/traces/{}",
+            self.base_url.trim_end_matches('/'),
+            datasource_uid,
+            trace_id
+        );
+
+        let body = self.get_text(&endpoint, None, "fetching trace by ID")?;
+        serde_json::from_str(&body).context("failed to parse trace JSON")
+    }
+
     fn get_text(
         &self,
         endpoint: &str,
@@ -100,6 +193,20 @@ impl GrafanaClient {
 
         Ok(body)
     }
+}
+
+fn parse_prometheus_response(body: &str) -> Result<PrometheusData> {
+    let response: PrometheusQueryResponse =
+        serde_json::from_str(body).context("failed to parse Prometheus query response JSON")?;
+
+    if response.status != "success" {
+        bail!(
+            "Prometheus query returned non-success status: {}",
+            response.status
+        );
+    }
+
+    Ok(response.data)
 }
 
 fn ensure_grafana_success(status: StatusCode, body: &str, action: &str) -> Result<()> {

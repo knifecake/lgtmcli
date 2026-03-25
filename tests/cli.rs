@@ -151,3 +151,203 @@ fn logs_query_json_returns_lines() {
 
     logs_mock.assert();
 }
+
+#[test]
+fn metrics_query_json_returns_vector_samples() {
+    let server = MockServer::start();
+    let metrics_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/proxy/uid/mimir-prod/api/v1/query")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                    "status": "success",
+                    "data": {
+                        "resultType": "vector",
+                        "result": [
+                            {
+                                "metric": {"__name__": "up", "job": "api"},
+                                "value": [1710000000, "1"]
+                            }
+                        ]
+                    }
+                }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args([
+            "metrics",
+            "query",
+            "up{job=\"api\"}",
+            "--ds",
+            "mimir-prod",
+            "--time",
+            "2024-01-01T00:00:00Z",
+            "--json",
+        ]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let payload: Value = serde_json::from_str(&stdout).expect("valid json output");
+
+    assert_eq!(payload["mode"], "instant");
+    assert_eq!(payload["result_type"], "vector");
+    assert_eq!(payload["count"], 1);
+    assert_eq!(payload["samples"][0]["value"], "1");
+
+    metrics_mock.assert();
+}
+
+#[test]
+fn metrics_range_json_returns_matrix_samples() {
+    let server = MockServer::start();
+    let metrics_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/proxy/uid/mimir-prod/api/v1/query_range")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                    "status": "success",
+                    "data": {
+                        "resultType": "matrix",
+                        "result": [
+                            {
+                                "metric": {"__name__": "up", "job": "api"},
+                                "values": [
+                                    [1710000000, "1"],
+                                    [1710000060, "0"]
+                                ]
+                            }
+                        ]
+                    }
+                }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args([
+            "metrics",
+            "range",
+            "up{job=\"api\"}",
+            "--ds",
+            "mimir-prod",
+            "--from",
+            "2024-01-01T00:00:00Z",
+            "--to",
+            "2024-01-01T00:02:00Z",
+            "--step",
+            "1m",
+            "--json",
+        ]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let payload: Value = serde_json::from_str(&stdout).expect("valid json output");
+
+    assert_eq!(payload["mode"], "range");
+    assert_eq!(payload["count"], 2);
+    assert_eq!(payload["samples"][0]["value"], "1");
+    assert_eq!(payload["samples"][1]["value"], "0");
+
+    metrics_mock.assert();
+}
+
+#[test]
+fn traces_search_json_returns_trace_summaries() {
+    let server = MockServer::start();
+    let traces_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/proxy/uid/tempo-main/api/search")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                    "traces": [
+                        {
+                            "traceID": "abc123",
+                            "rootServiceName": "checkout",
+                            "rootTraceName": "POST /pay",
+                            "startTimeUnixNano": "1710000000000000000",
+                            "durationMs": 95.1,
+                            "spanSets": [{"spans": [{"spanID": "1"}, {"spanID": "2"}]}]
+                        }
+                    ]
+                }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args([
+            "traces",
+            "search",
+            "{ status = error }",
+            "--ds",
+            "tempo-main",
+            "--from",
+            "2024-01-01T00:00:00Z",
+            "--to",
+            "2024-01-01T01:00:00Z",
+            "--json",
+        ]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let payload: Value = serde_json::from_str(&stdout).expect("valid json output");
+
+    assert_eq!(payload["count"], 1);
+    assert_eq!(payload["traces"][0]["trace_id"], "abc123");
+    assert_eq!(payload["traces"][0]["root_service"], "checkout");
+    assert_eq!(payload["traces"][0]["span_count"], 2);
+
+    traces_mock.assert();
+}
+
+#[test]
+fn traces_get_prints_summary_in_table_mode() {
+    let server = MockServer::start();
+    let trace_get_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/proxy/uid/tempo-main/api/v2/traces/abc123")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                    "resourceSpans": [
+                        {
+                            "scopeSpans": [
+                                {"spans": [{"spanId": "1"}, {"spanId": "2"}]}
+                            ]
+                        }
+                    ]
+                }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args(["traces", "get", "abc123", "--ds", "tempo-main"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Trace ID: abc123"))
+        .stdout(predicate::str::contains("Detected spans: 2"));
+
+    trace_get_mock.assert();
+}
