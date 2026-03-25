@@ -56,6 +56,11 @@ Implemented:
 
 ```bash
 lgtmcli auth status
+lgtmcli datasources list
+lgtmcli datasources list --type loki
+
+# shorthand
+lgtmcli ds list --type prometheus
 ```
 
 Planned:
@@ -68,12 +73,22 @@ lgtmcli traces '<traceql>'
 
 ## Current MVP (implemented)
 
-The current binary performs a credential check by issuing a test PromQL query through Grafana's metrics datasource proxy endpoint:
+The current binary can:
+
+- verify credentials against the Grafana API (`auth status`)
+- list available datasources (`datasources list` / `ds list`)
+- filter datasources by type (`--type`)
+
+Examples:
 
 ```bash
 cargo run -- auth status
+cargo run -- ds list
+cargo run -- ds list --type loki
+
 # or after build:
 # lgtmcli auth status
+# lgtmcli ds list --type tempo
 ```
 
 It requires:
