@@ -3,7 +3,7 @@ use serde::Serialize;
 
 use crate::app::AppContext;
 use crate::grafana::models::DataSource;
-use crate::output::TableOutput;
+use crate::output::{TableOutput, render_aligned_table};
 
 #[derive(Debug, Serialize)]
 pub struct DatasourceListResult {
@@ -51,17 +51,22 @@ impl TableOutput for DatasourceListResult {
             return;
         }
 
-        println!("ID\tUID\tTYPE\tNAME\tDEFAULT");
-        for ds in &self.datasources {
-            println!(
-                "{}\t{}\t{}\t{}\t{}",
-                ds.id,
-                ds.uid,
-                ds.ds_type,
-                ds.name,
-                if ds.is_default { "yes" } else { "no" }
-            );
-        }
+        let headers = ["ID", "UID", "TYPE", "NAME", "DEFAULT"];
+        let rows: Vec<Vec<String>> = self
+            .datasources
+            .iter()
+            .map(|ds| {
+                vec![
+                    ds.id.to_string(),
+                    ds.uid.clone(),
+                    ds.ds_type.clone(),
+                    ds.name.clone(),
+                    if ds.is_default { "yes" } else { "no" }.to_string(),
+                ]
+            })
+            .collect();
+
+        render_aligned_table(&headers, &rows);
     }
 }
 

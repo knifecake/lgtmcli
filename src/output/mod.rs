@@ -20,6 +20,10 @@ pub trait TableOutput {
     fn render_table(&self);
 }
 
+pub fn render_aligned_table(headers: &[&str], rows: &[Vec<String>]) {
+    table::render_aligned(headers, rows);
+}
+
 pub fn emit<T>(mode: OutputMode, value: &T) -> Result<()>
 where
     T: Serialize + TableOutput,
