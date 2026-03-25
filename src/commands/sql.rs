@@ -8,8 +8,6 @@ use crate::app::AppContext;
 use crate::cli::{SqlDescribeArgs, SqlQueryArgs, SqlTablesArgs};
 use crate::output::{TableOutput, render_aligned_table};
 
-const SUPPORTED_SQL_TYPES: [&str; 3] = ["postgres", "mysql", "mssql"];
-
 #[derive(Debug, Serialize)]
 pub struct SqlQueryResult {
     pub datasource_uid: String,
@@ -26,7 +24,13 @@ pub fn query(ctx: &AppContext, args: SqlQueryArgs) -> Result<SqlQueryResult> {
     validate_read_only_sql(&args.query)?;
 
     let datasource = ctx.grafana.fetch_datasource_by_uid(&args.datasource_uid)?;
-    ensure_supported_sql_type(&datasource.ds_type)?;
+
+    if normalize_sql_type(&datasource.ds_type).is_none() && !args.force {
+        bail!(
+            "datasource type '{}' is not recognized as SQL by lgtmcli (supported: postgres/mysql/mssql and known aliases). Use --force to skip this check.",
+            datasource.ds_type
+        );
+    }
 
     run_sql_query(
         ctx,
@@ -39,23 +43,19 @@ pub fn query(ctx: &AppContext, args: SqlQueryArgs) -> Result<SqlQueryResult> {
 
 pub fn tables(ctx: &AppContext, args: SqlTablesArgs) -> Result<SqlQueryResult> {
     let datasource = ctx.grafana.fetch_datasource_by_uid(&args.datasource_uid)?;
-    ensure_supported_sql_type(&datasource.ds_type)?;
+    let sql_type = require_supported_sql_type(&datasource.ds_type)?;
 
-    let query = build_tables_query(
-        &datasource.ds_type,
-        args.schema.as_deref(),
-        args.like.as_deref(),
-    )?;
+    let query = build_tables_query(sql_type, args.schema.as_deref(), args.like.as_deref())?;
 
     run_sql_query(ctx, datasource.uid, datasource.ds_type, query, args.limit)
 }
 
 pub fn describe(ctx: &AppContext, args: SqlDescribeArgs) -> Result<SqlQueryResult> {
     let datasource = ctx.grafana.fetch_datasource_by_uid(&args.datasource_uid)?;
-    ensure_supported_sql_type(&datasource.ds_type)?;
+    let sql_type = require_supported_sql_type(&datasource.ds_type)?;
 
     let (schema, table) = resolve_schema_and_table(&args.table, args.schema.as_deref())?;
-    let query = build_describe_query(&datasource.ds_type, schema.as_deref(), &table)?;
+    let query = build_describe_query(sql_type, schema.as_deref(), &table)?;
 
     run_sql_query(ctx, datasource.uid, datasource.ds_type, query, args.limit)
 }
@@ -126,17 +126,23 @@ fn run_sql_query(
     })
 }
 
-fn ensure_supported_sql_type(ds_type: &str) -> Result<()> {
-    if SUPPORTED_SQL_TYPES
-        .iter()
-        .any(|allowed| ds_type.eq_ignore_ascii_case(allowed))
-    {
-        return Ok(());
-    }
+fn require_supported_sql_type(ds_type: &str) -> Result<&'static str> {
+    normalize_sql_type(ds_type).ok_or_else(|| {
+        anyhow::anyhow!(
+            "datasource type '{ds_type}' is not a supported SQL datasource type (supported: postgres, mysql, mssql; aliases: grafana-postgresql-datasource, grafana-mysql-datasource, grafana-mssql-datasource)"
+        )
+    })
+}
 
-    bail!(
-        "datasource type '{ds_type}' is not a supported SQL datasource type (supported: postgres, mysql, mssql)"
-    )
+fn normalize_sql_type(ds_type: &str) -> Option<&'static str> {
+    match ds_type.to_ascii_lowercase().as_str() {
+        "postgres" | "postgresql" | "grafana-postgresql-datasource" => Some("postgres"),
+        "mysql" | "grafana-mysql-datasource" => Some("mysql"),
+        "mssql" | "sqlserver" | "grafana-mssql-datasource" | "grafana-sqlserver-datasource" => {
+            Some("mssql")
+        }
+        _ => None,
+    }
 }
 
 fn build_tables_query(ds_type: &str, schema: Option<&str>, like: Option<&str>) -> Result<String> {
@@ -394,8 +400,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_describe_query, build_tables_query, parse_ds_query_result, resolve_schema_and_table,
-        validate_read_only_sql,
+        build_describe_query, build_tables_query, normalize_sql_type, parse_ds_query_result,
+        resolve_schema_and_table, validate_read_only_sql,
     };
 
     #[test]
@@ -473,5 +479,21 @@ mod tests {
         let query = build_describe_query("postgres", Some("public"), "users").expect("query");
         assert!(query.contains("table_name = 'users'"));
         assert!(query.contains("table_schema = 'public'"));
+    }
+
+    #[test]
+    fn normalizes_grafana_sql_plugin_aliases() {
+        assert_eq!(
+            normalize_sql_type("grafana-postgresql-datasource"),
+            Some("postgres")
+        );
+        assert_eq!(
+            normalize_sql_type("grafana-mysql-datasource"),
+            Some("mysql")
+        );
+        assert_eq!(
+            normalize_sql_type("grafana-mssql-datasource"),
+            Some("mssql")
+        );
     }
 }

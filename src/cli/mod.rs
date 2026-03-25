@@ -260,6 +260,10 @@ pub struct SqlQueryArgs {
     /// Maximum number of rows to return in CLI output
     #[arg(long, default_value_t = 200)]
     pub limit: usize,
+
+    /// Skip datasource type gate and let Grafana decide whether the datasource can run SQL
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Args)]

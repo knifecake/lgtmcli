@@ -385,7 +385,7 @@ fn sql_query_json_returns_rows_and_truncates_with_limit() {
                 "id": 42,
                 "uid": "pg-ro",
                 "name": "Postgres Read Replica",
-                "type": "postgres",
+                "type": "grafana-postgresql-datasource",
                 "isDefault": false
             }"#,
             );
@@ -443,7 +443,7 @@ fn sql_query_json_returns_rows_and_truncates_with_limit() {
     let payload: Value = serde_json::from_str(&stdout).expect("valid json output");
 
     assert_eq!(payload["datasource_uid"], "pg-ro");
-    assert_eq!(payload["datasource_type"], "postgres");
+    assert_eq!(payload["datasource_type"], "grafana-postgresql-datasource");
     assert_eq!(payload["row_count"], 1);
     assert_eq!(payload["total_row_count"], 2);
     assert_eq!(payload["truncated"], true);
@@ -632,10 +632,79 @@ fn sql_query_rejects_non_sql_datasource_types() {
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "not a supported SQL datasource type",
+            "is not recognized as SQL by lgtmcli",
         ));
 
     datasource_mock.assert();
+}
+
+#[test]
+fn sql_query_force_allows_unknown_datasource_type() {
+    let server = MockServer::start();
+
+    let datasource_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/uid/custom-sql")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "id": 77,
+                "uid": "custom-sql",
+                "name": "Custom SQL Plugin",
+                "type": "my-custom-sql-plugin",
+                "isDefault": false
+            }"#,
+            );
+    });
+
+    let query_mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/ds/query")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "results": {
+                    "A": {
+                        "frames": [
+                            {
+                                "schema": {
+                                    "fields": [{"name": "value"}]
+                                },
+                                "data": {
+                                    "values": [[1]]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args([
+            "sql",
+            "query",
+            "select 1 as value",
+            "--ds",
+            "custom-sql",
+            "--force",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"row_count\": 1"));
+
+    datasource_mock.assert();
+    query_mock.assert();
 }
 
 #[test]

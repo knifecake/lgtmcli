@@ -147,6 +147,9 @@ lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds p
 
 The SQL command enforces read-only statements (for example `SELECT`, `WITH`, `SHOW`, `EXPLAIN`) and rejects write statements.
 
+Datasource type aliases such as `grafana-postgresql-datasource` are supported.
+If you use a custom SQL plugin type, you can bypass the type gate with `--force` on `sql query`.
+
 ---
 
 ## 5) Output for scripts
