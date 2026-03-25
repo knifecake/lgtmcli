@@ -6,7 +6,7 @@ use reqwest::blocking::Client;
 
 use crate::app::GrafanaConfig;
 
-use super::models::DataSource;
+use super::models::{DataSource, LokiQueryRangeResponse, LokiStream};
 
 const REQUEST_TIMEOUT_SECS: u64 = 15;
 
@@ -32,23 +32,73 @@ impl GrafanaClient {
 
     pub fn fetch_datasources(&self) -> Result<Vec<DataSource>> {
         let endpoint = format!("{}/api/datasources", self.base_url.trim_end_matches('/'));
+        let body = self.get_text(&endpoint, None, "calling Grafana datasources API")?;
 
-        let response = self
-            .http
-            .get(&endpoint)
-            .bearer_auth(&self.token)
+        let datasources: Vec<DataSource> =
+            serde_json::from_str(&body).context("failed to parse datasource list JSON")?;
+
+        Ok(datasources)
+    }
+
+    pub fn query_loki_range(
+        &self,
+        datasource_uid: &str,
+        query: &str,
+        start_ns: &str,
+        end_ns: &str,
+        limit: u32,
+        direction: &str,
+    ) -> Result<Vec<LokiStream>> {
+        let endpoint = format!(
+            "{}/api/datasources/proxy/uid/{}/loki/api/v1/query_range",
+            self.base_url.trim_end_matches('/'),
+            datasource_uid
+        );
+
+        let params = vec![
+            ("query", query.to_string()),
+            ("start", start_ns.to_string()),
+            ("end", end_ns.to_string()),
+            ("limit", limit.to_string()),
+            ("direction", direction.to_string()),
+        ];
+
+        let body = self.get_text(&endpoint, Some(&params), "querying Loki logs")?;
+
+        let response: LokiQueryRangeResponse =
+            serde_json::from_str(&body).context("failed to parse Loki query response JSON")?;
+
+        if response.status != "success" {
+            bail!(
+                "Loki query returned non-success status: {}",
+                response.status
+            );
+        }
+
+        Ok(response.data.streams)
+    }
+
+    fn get_text(
+        &self,
+        endpoint: &str,
+        params: Option<&[(&str, String)]>,
+        action: &str,
+    ) -> Result<String> {
+        let mut request = self.http.get(endpoint).bearer_auth(&self.token);
+        if let Some(params) = params {
+            request = request.query(params);
+        }
+
+        let response = request
             .send()
             .with_context(|| format!("request to {endpoint} failed"))?;
 
         let status = response.status();
         let body = response.text().context("failed to read response body")?;
 
-        ensure_grafana_success(status, &body, "calling Grafana datasources API")?;
+        ensure_grafana_success(status, &body, action)?;
 
-        let datasources: Vec<DataSource> =
-            serde_json::from_str(&body).context("failed to parse datasource list JSON")?;
-
-        Ok(datasources)
+        Ok(body)
     }
 }
 

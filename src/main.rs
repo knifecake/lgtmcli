@@ -10,7 +10,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use app::AppContext;
-use cli::{AuthCommands, Cli, Commands, DatasourceCommands};
+use cli::{AuthCommands, Cli, Commands, DatasourceCommands, LogsCommands};
 use output::OutputMode;
 
 fn main() {
@@ -39,6 +39,15 @@ fn run() -> Result<()> {
             match command {
                 DatasourceCommands::List { ds_type } => {
                     let result = commands::datasources::list(&ctx, ds_type)?;
+                    output::emit(output_mode, &result)?;
+                }
+            }
+        }
+        Commands::Logs { command } => {
+            let ctx = AppContext::from_env()?;
+            match command {
+                LogsCommands::Query(args) => {
+                    let result = commands::logs::query(&ctx, args)?;
                     output::emit(output_mode, &result)?;
                 }
             }

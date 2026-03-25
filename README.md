@@ -61,6 +61,9 @@ lgtmcli datasources list --type loki
 
 # shorthand
 lgtmcli ds list --type prometheus
+
+# logs
+lgtmcli logs query '{service="api"}' --ds loki-prod --since 1h
 ```
 
 Output defaults to human-readable table/text. Pass `--json` for machine-readable output.
@@ -69,7 +72,6 @@ Planned:
 
 ```bash
 lgtmcli metrics '<promql>'
-lgtmcli logs '<logql>'
 lgtmcli traces '<traceql>'
 ```
 
@@ -80,18 +82,19 @@ The current binary can:
 - verify credentials against the Grafana API (`auth status`)
 - list available datasources (`datasources list` / `ds list`)
 - filter datasources by type (`--type`)
+- query Loki logs via datasource proxy (`logs query`)
 
 Examples:
 
 ```bash
 cargo run -- auth status
 cargo run -- ds list
-cargo run -- ds list --type loki
 cargo run -- ds list --type loki --json
+cargo run -- logs query '{service="api"}' --ds loki-prod --since 1h
+cargo run -- logs query '{service="api"}' --ds loki-prod --from 2026-03-25T10:00:00Z --to 2026-03-25T11:00:00Z --json
 
 # or after build:
-# lgtmcli auth status
-# lgtmcli ds list --type tempo --json
+# lgtmcli logs query '{service="api"}' --ds loki-prod --since 30m
 ```
 
 It requires:

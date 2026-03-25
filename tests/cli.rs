@@ -92,3 +92,62 @@ fn datasources_list_json_applies_type_filter() {
 
     datasource_mock.assert();
 }
+
+#[test]
+fn logs_query_json_returns_lines() {
+    let server = MockServer::start();
+    let logs_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/proxy/uid/loki-prod/loki/api/v1/query_range")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                    "status": "success",
+                    "data": {
+                        "resultType": "streams",
+                        "result": [
+                            {
+                                "stream": {"service": "api", "level": "error"},
+                                "values": [
+                                    ["1710000000000000000", "boom"],
+                                    ["1710000001000000000", "still bad"]
+                                ]
+                            }
+                        ]
+                    }
+                }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args([
+            "logs",
+            "query",
+            "{service=\"api\"}",
+            "--ds",
+            "loki-prod",
+            "--from",
+            "2024-01-01T00:00:00Z",
+            "--to",
+            "2024-01-01T00:10:00Z",
+            "--json",
+        ]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let payload: Value = serde_json::from_str(&stdout).expect("valid json output");
+
+    assert_eq!(payload["datasource_uid"], "loki-prod");
+    assert_eq!(payload["query"], "{service=\"api\"}");
+    assert_eq!(payload["count"], 2);
+    assert_eq!(payload["lines"].as_array().unwrap().len(), 2);
+    assert_eq!(payload["lines"][0]["line"], "still bad");
+    assert_eq!(payload["lines"][1]["line"], "boom");
+
+    logs_mock.assert();
+}
