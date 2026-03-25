@@ -12,7 +12,8 @@ use clap::Parser;
 
 use app::AppContext;
 use cli::{
-    AuthCommands, Cli, Commands, DatasourceCommands, LogsCommands, MetricsCommands, TracesCommands,
+    AuthCommands, Cli, Commands, DatasourceCommands, LogsCommands, MetricsCommands, SqlCommands,
+    TracesCommands,
 };
 use output::OutputMode;
 
@@ -81,6 +82,27 @@ fn run() -> Result<()> {
                 }
                 TracesCommands::Get(args) => {
                     let result = commands::traces::get(&ctx, args)?;
+                    output::emit(output_mode, &result)?;
+                }
+            }
+        }
+        Commands::Sql { command } => {
+            let ctx = AppContext::from_env()?;
+            match command {
+                SqlCommands::Query(args) => {
+                    let result = commands::sql::query(&ctx, args)?;
+                    output::emit(output_mode, &result)?;
+                }
+                SqlCommands::Schemas(args) => {
+                    let result = commands::sql::schemas(&ctx, args)?;
+                    output::emit(output_mode, &result)?;
+                }
+                SqlCommands::Tables(args) => {
+                    let result = commands::sql::tables(&ctx, args)?;
+                    output::emit(output_mode, &result)?;
+                }
+                SqlCommands::Describe(args) => {
+                    let result = commands::sql::describe(&ctx, args)?;
                     output::emit(output_mode, &result)?;
                 }
             }

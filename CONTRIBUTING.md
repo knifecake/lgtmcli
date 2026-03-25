@@ -60,7 +60,7 @@ When adding fields, prefer additive changes and avoid breaking existing JSON key
 
 ## Command design conventions
 
-- keep signal-specific commands (`logs`, `metrics`, `traces`)
+- keep signal-specific commands (`logs`, `metrics`, `traces`, `sql`)
 - require explicit datasource selection (`--ds <uid>`) for reproducibility
 - support range selection with either:
   - `--since <duration>`
@@ -71,3 +71,42 @@ When adding fields, prefer additive changes and avoid breaking existing JSON key
 - never commit secrets or real tokens
 - use least-privilege Grafana service account scopes
 - ensure errors for 401/403 are clear and actionable
+
+## Versioning and releases
+
+`lgtmcli` currently ships a single release channel:
+
+- **Stable**: semantic versions (`vX.Y.Z`)
+
+Current phase (pre-1.0):
+
+- breaking CLI/JSON changes: bump `MINOR` (`v0.4.0` -> `v0.5.0`)
+- additive features/fixes: bump `PATCH` (`v0.5.0` -> `v0.5.1`)
+
+After 1.0:
+
+- follow SemVer strictly (`MAJOR.MINOR.PATCH`)
+
+Before 1.0, breaking changes are allowed but must be called out clearly in release notes.
+
+### What counts as a breaking change
+
+- changing/removing command names, flags, or behavior relied on by scripts
+- changing/removing existing keys in `--json` output
+
+Human-readable table/text output may evolve more freely.
+
+### Release automation
+
+- Pushing a `vX.Y.Z` tag creates a stable release via
+  `.github/workflows/release-stable.yml`.
+
+Stable release command:
+
+```bash
+# make sure Cargo.toml has version = "0.2.0"
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+See [docs/releases.md](./docs/releases.md) for artifact names and installer usage.
