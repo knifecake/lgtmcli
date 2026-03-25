@@ -85,10 +85,10 @@ case "$os" in
     ;;
   darwin)
     if [ "$arch" = "x86_64" ]; then
-      target="x86_64-apple-darwin"
-    else
-      target="aarch64-apple-darwin"
+      echo "Unsupported macOS architecture: x86_64 (Apple Silicon only)" >&2
+      exit 1
     fi
+    target="aarch64-apple-darwin"
     ext="tar.gz"
     ;;
   *)
