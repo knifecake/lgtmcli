@@ -3,9 +3,10 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use serde_json::Value;
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::app::AppContext;
-use crate::cli::{SqlDescribeArgs, SqlQueryArgs, SqlTablesArgs};
+use crate::cli::{SqlDescribeArgs, SqlQueryArgs, SqlSchemasArgs, SqlTablesArgs};
 use crate::output::{TableOutput, render_aligned_table};
 
 #[derive(Debug, Serialize)]
@@ -17,7 +18,7 @@ pub struct SqlQueryResult {
     pub row_count: usize,
     pub total_row_count: usize,
     pub truncated: bool,
-    pub rows: Vec<BTreeMap<String, String>>,
+    pub rows: Vec<BTreeMap<String, Value>>,
 }
 
 pub fn query(ctx: &AppContext, args: SqlQueryArgs) -> Result<SqlQueryResult> {
@@ -41,6 +42,15 @@ pub fn query(ctx: &AppContext, args: SqlQueryArgs) -> Result<SqlQueryResult> {
     )
 }
 
+pub fn schemas(ctx: &AppContext, args: SqlSchemasArgs) -> Result<SqlQueryResult> {
+    let datasource = ctx.grafana.fetch_datasource_by_uid(&args.datasource_uid)?;
+    let sql_type = require_supported_sql_type(&datasource.ds_type)?;
+
+    let query = build_schemas_query(sql_type, args.like.as_deref(), args.include_system)?;
+
+    run_sql_query(ctx, datasource.uid, datasource.ds_type, query, args.limit)
+}
+
 pub fn tables(ctx: &AppContext, args: SqlTablesArgs) -> Result<SqlQueryResult> {
     let datasource = ctx.grafana.fetch_datasource_by_uid(&args.datasource_uid)?;
     let sql_type = require_supported_sql_type(&datasource.ds_type)?;
@@ -57,7 +67,21 @@ pub fn describe(ctx: &AppContext, args: SqlDescribeArgs) -> Result<SqlQueryResul
     let (schema, table) = resolve_schema_and_table(&args.table, args.schema.as_deref())?;
     let query = build_describe_query(sql_type, schema.as_deref(), &table)?;
 
-    run_sql_query(ctx, datasource.uid, datasource.ds_type, query, args.limit)
+    let result = run_sql_query(ctx, datasource.uid, datasource.ds_type, query, args.limit)?;
+
+    if result.total_row_count == 0 {
+        let table_ref = match schema.as_deref() {
+            Some(schema_name) => format!("{schema_name}.{table}"),
+            None => table,
+        };
+
+        bail!(
+            "table '{table_ref}' was not found or has no visible columns in datasource '{}'",
+            result.datasource_uid
+        );
+    }
+
+    Ok(result)
 }
 
 impl TableOutput for SqlQueryResult {
@@ -74,7 +98,11 @@ impl TableOutput for SqlQueryResult {
             .map(|row| {
                 self.columns
                     .iter()
-                    .map(|col| row.get(col).cloned().unwrap_or_default())
+                    .map(|col| {
+                        row.get(col)
+                            .map(json_value_to_display_string)
+                            .unwrap_or_default()
+                    })
                     .collect()
             })
             .collect();
@@ -93,7 +121,13 @@ impl TableOutput for SqlQueryResult {
 #[derive(Debug)]
 struct ParsedSqlTable {
     columns: Vec<String>,
-    rows: Vec<BTreeMap<String, String>>,
+    rows: Vec<BTreeMap<String, Value>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FrameColumn {
+    name: String,
+    field_type: Option<String>,
 }
 
 fn run_sql_query(
@@ -110,7 +144,7 @@ fn run_sql_query(
     let parsed = parse_ds_query_result(&response)?;
 
     let total_row_count = parsed.rows.len();
-    let rows: Vec<BTreeMap<String, String>> = parsed.rows.into_iter().take(limit).collect();
+    let rows: Vec<BTreeMap<String, Value>> = parsed.rows.into_iter().take(limit).collect();
     let row_count = rows.len();
     let truncated = row_count < total_row_count;
 
@@ -143,6 +177,36 @@ fn normalize_sql_type(ds_type: &str) -> Option<&'static str> {
         }
         _ => None,
     }
+}
+
+fn build_schemas_query(ds_type: &str, like: Option<&str>, include_system: bool) -> Result<String> {
+    let mut query = String::from("SELECT schema_name\nFROM information_schema.schemata\nWHERE 1=1");
+
+    if !include_system {
+        match ds_type.to_ascii_lowercase().as_str() {
+            "postgres" => {
+                query.push_str("\n  AND schema_name <> 'information_schema'");
+                query.push_str("\n  AND schema_name NOT LIKE 'pg_%'");
+            }
+            "mysql" => query.push_str(
+                "\n  AND schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')",
+            ),
+            "mssql" => {
+                query.push_str("\n  AND schema_name NOT IN ('INFORMATION_SCHEMA', 'sys')");
+            }
+            other => bail!("unsupported SQL datasource type '{other}'"),
+        }
+    }
+
+    if let Some(pattern) = like {
+        query.push_str(&format!(
+            "\n  AND schema_name LIKE {}",
+            sql_string_literal(pattern)
+        ));
+    }
+
+    query.push_str("\nORDER BY schema_name");
+    Ok(query)
 }
 
 fn build_tables_query(ds_type: &str, schema: Option<&str>, like: Option<&str>) -> Result<String> {
@@ -276,25 +340,27 @@ fn parse_ds_query_result(payload: &Value) -> Result<ParsedSqlTable> {
     }
 
     let mut columns: Vec<String> = Vec::new();
-    let mut rows: Vec<BTreeMap<String, String>> = Vec::new();
+    let mut rows: Vec<BTreeMap<String, Value>> = Vec::new();
 
     for frame in frames {
         let frame_columns = extract_frame_columns(&frame)?;
+        let frame_column_names: Vec<String> =
+            frame_columns.iter().map(|col| col.name.clone()).collect();
 
         if columns.is_empty() {
-            columns = frame_columns.clone();
-        } else if columns != frame_columns {
+            columns = frame_column_names.clone();
+        } else if columns != frame_column_names {
             bail!("query returned multiple frames with different column sets");
         }
 
-        let frame_rows = extract_frame_rows(&frame, &columns)?;
+        let frame_rows = extract_frame_rows(&frame, &frame_columns)?;
         rows.extend(frame_rows);
     }
 
     Ok(ParsedSqlTable { columns, rows })
 }
 
-fn extract_frame_columns(frame: &Value) -> Result<Vec<String>> {
+fn extract_frame_columns(frame: &Value) -> Result<Vec<FrameColumn>> {
     let fields = frame
         .get("schema")
         .and_then(|v| v.get("fields"))
@@ -304,16 +370,26 @@ fn extract_frame_columns(frame: &Value) -> Result<Vec<String>> {
     fields
         .iter()
         .map(|field| {
-            field
+            let name = field
                 .get("name")
                 .and_then(Value::as_str)
                 .map(ToOwned::to_owned)
-                .context("invalid frame field: missing name")
+                .context("invalid frame field: missing name")?;
+
+            let field_type = field
+                .get("type")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
+
+            Ok(FrameColumn { name, field_type })
         })
         .collect()
 }
 
-fn extract_frame_rows(frame: &Value, columns: &[String]) -> Result<Vec<BTreeMap<String, String>>> {
+fn extract_frame_rows(
+    frame: &Value,
+    columns: &[FrameColumn],
+) -> Result<Vec<BTreeMap<String, Value>>> {
     let values_by_column = frame
         .get("data")
         .and_then(|v| v.get("values"))
@@ -343,12 +419,13 @@ fn extract_frame_rows(frame: &Value, columns: &[String]) -> Result<Vec<BTreeMap<
     for row_idx in 0..row_count {
         let mut row = BTreeMap::new();
 
-        for (col_idx, column_name) in columns.iter().enumerate() {
-            let cell = column_arrays[col_idx]
+        for (col_idx, column) in columns.iter().enumerate() {
+            let raw_cell = column_arrays[col_idx]
                 .get(row_idx)
-                .map(value_to_string)
-                .unwrap_or_default();
-            row.insert(column_name.clone(), cell);
+                .cloned()
+                .unwrap_or(Value::Null);
+            let cell = coerce_sql_cell_value(raw_cell, column.field_type.as_deref());
+            row.insert(column.name.clone(), cell);
         }
 
         rows.push(row);
@@ -357,7 +434,42 @@ fn extract_frame_rows(frame: &Value, columns: &[String]) -> Result<Vec<BTreeMap<
     Ok(rows)
 }
 
-fn value_to_string(value: &Value) -> String {
+fn coerce_sql_cell_value(value: Value, field_type: Option<&str>) -> Value {
+    if matches!(field_type, Some(field) if field.eq_ignore_ascii_case("time")) {
+        return coerce_time_value(value);
+    }
+
+    value
+}
+
+fn coerce_time_value(value: Value) -> Value {
+    match value {
+        Value::Number(number) => {
+            if let Some(ms) = number.as_i64() {
+                return epoch_millis_to_rfc3339(ms as i128)
+                    .map(Value::String)
+                    .unwrap_or(Value::Number(number));
+            }
+
+            if let Some(ms) = number.as_u64() {
+                return epoch_millis_to_rfc3339(ms as i128)
+                    .map(Value::String)
+                    .unwrap_or(Value::Number(number));
+            }
+
+            Value::Number(number)
+        }
+        other => other,
+    }
+}
+
+fn epoch_millis_to_rfc3339(ms: i128) -> Option<String> {
+    let ns = ms.checked_mul(1_000_000)?;
+    let dt = OffsetDateTime::from_unix_timestamp_nanos(ns).ok()?;
+    dt.format(&Rfc3339).ok()
+}
+
+fn json_value_to_display_string(value: &Value) -> String {
     match value {
         Value::Null => "null".to_string(),
         Value::String(v) => v.clone(),
@@ -400,8 +512,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_describe_query, build_tables_query, normalize_sql_type, parse_ds_query_result,
-        resolve_schema_and_table, validate_read_only_sql,
+        build_describe_query, build_schemas_query, build_tables_query, normalize_sql_type,
+        parse_ds_query_result, resolve_schema_and_table, validate_read_only_sql,
     };
 
     #[test]
@@ -450,8 +562,41 @@ mod tests {
         let parsed = parse_ds_query_result(&payload).expect("parse result");
         assert_eq!(parsed.columns, vec!["id", "email"]);
         assert_eq!(parsed.rows.len(), 2);
-        assert_eq!(parsed.rows[0].get("id").unwrap(), "1");
-        assert_eq!(parsed.rows[0].get("email").unwrap(), "a@example.com");
+        assert_eq!(parsed.rows[0].get("id"), Some(&json!(1)));
+        assert_eq!(parsed.rows[0].get("email"), Some(&json!("a@example.com")));
+    }
+
+    #[test]
+    fn coerces_time_fields_to_rfc3339() {
+        let payload = json!({
+            "results": {
+                "A": {
+                    "frames": [
+                        {
+                            "schema": {
+                                "fields": [
+                                    {"name": "ts", "type": "time"},
+                                    {"name": "flag", "type": "boolean"}
+                                ]
+                            },
+                            "data": {
+                                "values": [
+                                    [0],
+                                    [true]
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        });
+
+        let parsed = parse_ds_query_result(&payload).expect("parse result");
+        assert_eq!(
+            parsed.rows[0].get("ts"),
+            Some(&json!("1970-01-01T00:00:00Z"))
+        );
+        assert_eq!(parsed.rows[0].get("flag"), Some(&json!(true)));
     }
 
     #[test]
@@ -472,6 +617,20 @@ mod tests {
         let query = build_tables_query("postgres", None, None).expect("query");
         assert!(query.contains("pg_catalog"));
         assert!(query.contains("information_schema"));
+    }
+
+    #[test]
+    fn build_schemas_query_for_postgres_excludes_system_by_default() {
+        let query = build_schemas_query("postgres", None, false).expect("query");
+        assert!(query.contains("schema_name NOT LIKE 'pg_%'"));
+        assert!(query.contains("schema_name <> 'information_schema'"));
+    }
+
+    #[test]
+    fn build_schemas_query_allows_including_system_and_like_filter() {
+        let query = build_schemas_query("postgres", Some("pub%"), true).expect("query");
+        assert!(!query.contains("pg_%"));
+        assert!(query.contains("schema_name LIKE 'pub%'"));
     }
 
     #[test]

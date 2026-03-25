@@ -124,6 +124,14 @@ lgtmcli traces get <trace_id> --ds tempo-prod
 
 ## SQL (Postgres/MySQL/MSSQL datasources)
 
+Discover schemas:
+
+```bash
+lgtmcli sql schemas --ds pg-read-replica
+lgtmcli sql schemas --ds pg-read-replica --like pub%
+lgtmcli sql schemas --ds pg-read-replica --include-system
+```
+
 Discover tables:
 
 ```bash
@@ -138,6 +146,8 @@ lgtmcli sql describe users --schema public --ds pg-read-replica
 # or schema-qualified:
 lgtmcli sql describe public.users --ds pg-read-replica
 ```
+
+If the table does not exist (or has no visible columns), `sql describe` fails with a non-zero exit code.
 
 Run read-only SQL:
 
@@ -161,6 +171,7 @@ lgtmcli ds list --json
 lgtmcli logs stats 'rate({service="api"}[5m])' --ds loki-prod --since 1h --step 1m --json
 lgtmcli metrics range 'up' --ds mimir-prod --since 15m --step 30s --json
 lgtmcli traces search '{}' --ds tempo-prod --since 1h --json
+lgtmcli sql schemas --ds pg-read-replica --json
 lgtmcli sql tables --ds pg-read-replica --json
 lgtmcli sql describe users --schema public --ds pg-read-replica --json
 lgtmcli sql query 'select now() as ts' --ds pg-read-replica --json
@@ -195,6 +206,7 @@ Commands with time ranges support either:
   - `traces search`
   - `traces get`
 - **sql**
+  - `sql schemas`
   - `sql tables`
   - `sql describe`
   - `sql query`

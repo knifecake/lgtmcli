@@ -237,11 +237,13 @@ pub struct TraceGetArgs {
 
 #[derive(Subcommand)]
 #[command(
-    after_help = "EXAMPLES:\n  lgtmcli sql tables --ds pg-read-replica\n  lgtmcli sql tables --ds pg-read-replica --schema public --like user%\n  lgtmcli sql describe users --ds pg-read-replica\n  lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds pg-read-replica"
+    after_help = "EXAMPLES:\n  lgtmcli sql schemas --ds pg-read-replica\n  lgtmcli sql schemas --ds pg-read-replica --like pub%\n  lgtmcli sql tables --ds pg-read-replica\n  lgtmcli sql tables --ds pg-read-replica --schema public --like user%\n  lgtmcli sql describe users --ds pg-read-replica\n  lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds pg-read-replica"
 )]
 pub enum SqlCommands {
     /// Run a read-only SQL query against SQL datasources (postgres/mysql/mssql)
     Query(SqlQueryArgs),
+    /// List schemas/catalog namespaces from a SQL datasource
+    Schemas(SqlSchemasArgs),
     /// List tables from a SQL datasource
     Tables(SqlTablesArgs),
     /// Describe columns for a table in a SQL datasource
@@ -264,6 +266,25 @@ pub struct SqlQueryArgs {
     /// Skip datasource type gate and let Grafana decide whether the datasource can run SQL
     #[arg(long)]
     pub force: bool,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct SqlSchemasArgs {
+    /// SQL datasource UID (Grafana datasource UID)
+    #[arg(long = "ds", value_name = "UID")]
+    pub datasource_uid: String,
+
+    /// Optional SQL LIKE pattern for schema names (e.g. pub%, %test%)
+    #[arg(long, value_name = "PATTERN")]
+    pub like: Option<String>,
+
+    /// Include system/internal schemas
+    #[arg(long)]
+    pub include_system: bool,
+
+    /// Maximum number of rows to return in CLI output
+    #[arg(long, default_value_t = 200)]
+    pub limit: usize,
 }
 
 #[derive(Debug, Clone, Args)]
