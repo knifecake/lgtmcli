@@ -53,6 +53,10 @@ fn run() -> Result<()> {
                     let result = commands::logs::query(&ctx, args)?;
                     output::emit(output_mode, &result)?;
                 }
+                LogsCommands::Stats(args) => {
+                    let result = commands::logs::stats(&ctx, args)?;
+                    output::emit(output_mode, &result)?;
+                }
             }
         }
         Commands::Metrics { command } => {

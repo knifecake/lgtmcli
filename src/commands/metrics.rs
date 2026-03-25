@@ -140,7 +140,7 @@ impl TableOutput for MetricsQueryResult {
     }
 }
 
-fn extract_samples(data: &PrometheusData) -> Result<Vec<MetricSample>> {
+pub(crate) fn extract_samples(data: &PrometheusData) -> Result<Vec<MetricSample>> {
     match data.result_type.as_str() {
         "vector" => extract_vector_samples(&data.result),
         "matrix" => extract_matrix_samples(&data.result),
@@ -271,7 +271,7 @@ fn compare_numeric_string(left: &str, right: &str) -> Ordering {
     }
 }
 
-fn format_labels(labels: &BTreeMap<String, String>) -> String {
+pub(crate) fn format_labels(labels: &BTreeMap<String, String>) -> String {
     if labels.is_empty() {
         return "{}".to_string();
     }

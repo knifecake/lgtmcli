@@ -1,7 +1,12 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(name = "lgtmcli", version, about = "CLI for Grafana LGTM")]
+#[command(
+    name = "lgtmcli",
+    version,
+    about = "CLI for Grafana LGTM",
+    after_help = "EXAMPLES:\n  lgtmcli auth status\n  lgtmcli ds list --type loki\n  lgtmcli logs query '{service=\"api\"}' --ds loki-prod --since 1h\n  lgtmcli logs stats 'quantile_over_time(0.95, ({host=\"app-1\", role=\"web\"} |= \"gunicorn.access\" | json | unwrap server_time_ms)[1m])' --ds loki-prod --since 1h --step 1m\n  lgtmcli metrics range 'rate(http_requests_total[5m])' --ds mimir-prod --since 1h --step 30s\n  lgtmcli traces search '{ status = error }' --ds tempo-prod --since 1h --json\n\nTIPS:\n  - Output defaults to table; use --json for scripts\n  - Use --ds with datasource UID from `lgtmcli ds list`"
+)]
 pub struct Cli {
     /// Output JSON instead of human-readable table/text
     #[arg(long, global = true)]
@@ -53,9 +58,14 @@ pub enum DatasourceCommands {
 }
 
 #[derive(Subcommand)]
+#[command(
+    after_help = "EXAMPLES:\n  lgtmcli logs query '{service=\"api\"}' --ds loki-prod --since 1h\n  lgtmcli logs query '{service=\"api\"} |= \"error\"' --ds loki-prod --since 1h\n  lgtmcli logs stats 'rate({service=\"api\"}[5m])' --ds loki-prod --since 1h --step 1m\n  lgtmcli logs stats 'avg by () (quantile_over_time(0.95, ({host=\"app-1\", role=\"web\"} |= \"gunicorn.access\" | json | unwrap server_time_ms)[1m]))' --ds loki-prod --since 1h --step 1m"
+)]
 pub enum LogsCommands {
     /// Run a LogQL query over a time range
     Query(LogsQueryArgs),
+    /// Run a LogQL stats query over a time range (metrics-style output)
+    Stats(LogsStatsArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -86,6 +96,32 @@ pub struct LogsQueryArgs {
     /// Loki query direction
     #[arg(long, value_enum, default_value_t = LogDirectionArg::Backward)]
     pub direction: LogDirectionArg,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct LogsStatsArgs {
+    /// LogQL metric/stats expression
+    pub query: String,
+
+    /// Logs datasource UID (Grafana datasource UID)
+    #[arg(long = "ds", value_name = "UID")]
+    pub datasource_uid: String,
+
+    /// Relative range from now (e.g. 15m, 1h, 24h)
+    #[arg(long, value_name = "DURATION")]
+    pub since: Option<String>,
+
+    /// RFC3339 timestamp for range start (must be used with --to)
+    #[arg(long, value_name = "TIMESTAMP")]
+    pub from: Option<String>,
+
+    /// RFC3339 timestamp for range end (must be used with --from)
+    #[arg(long, value_name = "TIMESTAMP")]
+    pub to: Option<String>,
+
+    /// Query resolution step (e.g. 30s, 1m)
+    #[arg(long, default_value = "1m", value_name = "DURATION")]
+    pub step: String,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

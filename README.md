@@ -1,114 +1,169 @@
 # lgtmcli
 
-A lightweight CLI for exploring **metrics, logs, and traces** through Grafana datasource proxy APIs.
+A CLI for exploring Grafana-backed **logs, metrics, and traces** from your terminal.
 
-`lgtmcli` is designed for both humans and automation agents:
+`lgtmcli` is optimized for both humans and agents:
 
-- human-friendly default table output
-- machine-friendly `--json` output
-- explicit datasource routing via `--ds <uid>` for reproducible scripts
+- readable table output by default
+- machine-readable `--json` output
+- explicit datasource routing with `--ds <uid>`
 
-## Architecture
+## License
 
-`lgtmcli` uses **Grafana as a single API gateway** for telemetry queries:
+This project is licensed under the **MIT License**. See [LICENSE](./LICENSE).
 
-- **Metrics** → Prometheus-compatible datasource (for example, Mimir)
-- **Logs** → Loki
-- **Traces** → Tempo
+---
 
-Instead of talking to telemetry backends directly, the CLI uses Grafana datasource proxy endpoints.
+## 1) Install
 
-## Environment
-
-```bash
-export GRAFANA_URL="https://grafana.example.com"
-export GRAFANA_TOKEN="<grafana_service_account_token>"
-```
-
-`lgtmcli` sends:
-
-```http
-Authorization: Bearer <GRAFANA_TOKEN>
-```
-
-Use a dedicated Grafana service account token with datasource query permissions.
-
-## Install (local dev)
+### Build and install locally
 
 ```bash
 make            # release build (default target)
-make install    # copies lgtmcli to ~/.local/bin/lgtmcli
+make install    # installs to ~/.local/bin/lgtmcli
 ```
 
-## Command model
+Or run without installing:
 
-### Auth
+```bash
+cargo run -- --help
+```
+
+---
+
+## 2) Authenticate
+
+Set Grafana URL + token (read-only service account recommended):
+
+```bash
+export GRAFANA_URL="https://<cluster>.grafana.net"
+export GRAFANA_TOKEN="<grafana_service_account_token>"
+```
+
+Validate auth:
 
 ```bash
 lgtmcli auth status
 ```
 
-### Datasources
+---
+
+## 3) Discover datasources
+
+List all datasources:
 
 ```bash
 lgtmcli datasources list
-lgtmcli datasources list --type loki
-lgtmcli ds list --type prometheus   # alias: ds
+# alias:
+lgtmcli ds list
 ```
 
-### Logs
+Filter by type:
+
+```bash
+lgtmcli ds list --type loki
+lgtmcli ds list --type prometheus
+lgtmcli ds list --type tempo
+```
+
+Use these UIDs with `--ds` in all query commands.
+
+---
+
+## 4) Run queries
+
+## Logs
+
+### Log lines
 
 ```bash
 lgtmcli logs query '{service="api"}' --ds loki-prod --since 1h
-lgtmcli logs query '{service="api"}' --ds loki-prod --from 2026-03-25T10:00:00Z --to 2026-03-25T11:00:00Z
-lgtmcli logs query '{service="api"}' --ds loki-prod --limit 200 --direction backward
 ```
 
-### Metrics
+### Log stats (metric-style LogQL)
 
 ```bash
-# instant query (default time: now)
-lgtmcli metrics query 'up{job="api"}' --ds mimir-prod
-
-# instant query at explicit time
-lgtmcli metrics query 'up{job="api"}' --ds mimir-prod --time 2026-03-25T11:00:00Z
-
-# range query
-lgtmcli metrics range 'rate(http_requests_total[5m])' --ds mimir-prod --since 1h --step 30s
-lgtmcli metrics range 'up' --ds mimir-prod --from 2026-03-25T10:00:00Z --to 2026-03-25T11:00:00Z --step 1m
+lgtmcli logs stats 'rate({service="api"}[5m])' --ds loki-prod --since 1h --step 1m
 ```
 
-### Traces
+Example (gunicorn p95 per minute over the last hour):
+
+```bash
+lgtmcli logs stats 'avg by () (quantile_over_time(0.95, ({host="app-1", role="web"} |= "gunicorn.access" | json | unwrap server_time_ms)[1m]))' \
+  --ds loki-prod --since 1h --step 1m
+```
+
+## Metrics
+
+Instant query:
+
+```bash
+lgtmcli metrics query 'up{job="api"}' --ds mimir-prod
+```
+
+Range query:
+
+```bash
+lgtmcli metrics range 'rate(http_requests_total[5m])' --ds mimir-prod --since 1h --step 30s
+```
+
+## Traces
+
+Search:
 
 ```bash
 lgtmcli traces search '{ status = error }' --ds tempo-prod --since 1h --limit 20
-lgtmcli traces search '{}' --ds tempo-prod --from 2026-03-25T10:00:00Z --to 2026-03-25T11:00:00Z
+```
+
+Get full trace by ID:
+
+```bash
 lgtmcli traces get <trace_id> --ds tempo-prod
 ```
 
-## Output modes
+---
 
-Default output is human-readable table/text.
+## 5) Output for scripts
 
-Use `--json` for machine-readable output:
+Use `--json` with any command:
 
 ```bash
 lgtmcli ds list --json
-lgtmcli logs query '{service="api"}' --ds loki-prod --since 30m --json
+lgtmcli logs stats 'rate({service="api"}[5m])' --ds loki-prod --since 1h --step 1m --json
 lgtmcli metrics range 'up' --ds mimir-prod --since 15m --step 30s --json
 lgtmcli traces search '{}' --ds tempo-prod --since 1h --json
 ```
 
+---
+
 ## Time options
 
-Commands that support ranges use one of:
+Commands with time ranges support either:
 
 - `--since <duration>` (examples: `15m`, `1h`, `24h`)
 - `--from <RFC3339> --to <RFC3339>`
 
-`--since` cannot be combined with `--from/--to`.
+`--since` and `--from/--to` are mutually exclusive.
 
-## Datasource proxy routes used
+---
+
+## Full capabilities
+
+- **auth**
+  - `auth status`
+- **datasources**
+  - `datasources list` (alias: `ds list`)
+- **logs**
+  - `logs query`
+  - `logs stats`
+- **metrics**
+  - `metrics query`
+  - `metrics range`
+- **traces**
+  - `traces search`
+  - `traces get`
+
+### API routes used via Grafana datasource proxy
 
 - Metrics
   - `/api/datasources/proxy/uid/<metrics_uid>/api/v1/query`
@@ -119,17 +174,8 @@ Commands that support ranges use one of:
   - `/api/datasources/proxy/uid/<traces_uid>/api/search`
   - `/api/datasources/proxy/uid/<traces_uid>/api/v2/traces/<trace_id>`
 
-## Development
+---
 
-```bash
-make build
-make lint
-make test
-```
+## Contributing
 
-## Security notes
-
-- Never commit `GRAFANA_TOKEN`
-- Prefer short-lived/rotatable tokens
-- Use least-privilege service account scopes
-- Return clear errors for 401/403 auth failures
+For development setup and workflow, see [CONTRIBUTING.md](./CONTRIBUTING.md).

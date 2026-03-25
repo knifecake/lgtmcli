@@ -1,14 +1,16 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use crate::app::AppContext;
-use crate::cli::{LogDirectionArg, LogsQueryArgs};
+use crate::cli::{LogDirectionArg, LogsQueryArgs, LogsStatsArgs};
 use crate::grafana::models::LokiStream;
 use crate::output::{TableOutput, render_aligned_table};
-use crate::time::{ns_to_rfc3339, resolve_range, to_unix_ns_string};
+use crate::time::{ns_to_rfc3339, parse_since_duration, resolve_range, to_unix_ns_string};
+
+use super::metrics::{MetricSample, extract_samples};
 
 const DEFAULT_SINCE: &str = "1h";
 
@@ -22,6 +24,18 @@ pub struct LogsQueryResult {
     pub limit: u32,
     pub count: usize,
     pub lines: Vec<LogLine>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LogsStatsResult {
+    pub datasource_uid: String,
+    pub query: String,
+    pub start_ns: String,
+    pub end_ns: String,
+    pub step_seconds: u64,
+    pub result_type: String,
+    pub count: usize,
+    pub samples: Vec<MetricSample>,
 }
 
 #[derive(Debug, Serialize)]
@@ -66,6 +80,52 @@ pub fn query(ctx: &AppContext, args: LogsQueryArgs) -> Result<LogsQueryResult> {
     })
 }
 
+pub fn stats(ctx: &AppContext, args: LogsStatsArgs) -> Result<LogsStatsResult> {
+    let range = resolve_range(
+        args.since.as_deref(),
+        args.from.as_deref(),
+        args.to.as_deref(),
+        DEFAULT_SINCE,
+    )?;
+
+    let step_duration = parse_since_duration(&args.step)
+        .with_context(|| format!("invalid --step value '{}'", args.step))?;
+    let step_seconds = step_duration.as_secs();
+    if step_seconds == 0 {
+        bail!("--step must be at least 1s");
+    }
+
+    let start_ns = to_unix_ns_string(range.start)?;
+    let end_ns = to_unix_ns_string(range.end)?;
+
+    let data = ctx.grafana.query_loki_stats_range(
+        &args.datasource_uid,
+        &args.query,
+        &start_ns,
+        &end_ns,
+        &step_seconds.to_string(),
+    )?;
+
+    if data.result_type == "streams" {
+        bail!(
+            "logs stats expects metric LogQL (scalar/vector/matrix), but query returned streams. Use `logs query` for log lines."
+        );
+    }
+
+    let samples = extract_samples(&data)?;
+
+    Ok(LogsStatsResult {
+        datasource_uid: args.datasource_uid,
+        query: args.query,
+        start_ns,
+        end_ns,
+        step_seconds,
+        result_type: data.result_type,
+        count: samples.len(),
+        samples,
+    })
+}
+
 impl TableOutput for LogsQueryResult {
     fn render_table(&self) {
         if self.lines.is_empty() {
@@ -82,6 +142,30 @@ impl TableOutput for LogsQueryResult {
                     line.timestamp.clone(),
                     format_labels(&line.labels),
                     line.line.clone(),
+                ]
+            })
+            .collect();
+
+        render_aligned_table(&headers, &rows);
+    }
+}
+
+impl TableOutput for LogsStatsResult {
+    fn render_table(&self) {
+        if self.samples.is_empty() {
+            println!("No log stats samples found.");
+            return;
+        }
+
+        let headers = ["TIMESTAMP", "LABELS", "VALUE"];
+        let rows: Vec<Vec<String>> = self
+            .samples
+            .iter()
+            .map(|sample| {
+                vec![
+                    sample.timestamp.clone(),
+                    format_labels(&sample.labels),
+                    sample.value.clone(),
                 ]
             })
             .collect();

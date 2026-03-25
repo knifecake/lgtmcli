@@ -11,5 +11,8 @@
 *.envrc
 !.envrc.example
 
+# local notes / scratch
+WIP.md
+
 # macOS
 .DS_Store

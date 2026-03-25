@@ -153,6 +153,112 @@ fn logs_query_json_returns_lines() {
 }
 
 #[test]
+fn logs_stats_json_returns_timeseries_samples() {
+    let server = MockServer::start();
+    let stats_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/proxy/uid/loki-prod/loki/api/v1/query_range")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                    "status": "success",
+                    "data": {
+                        "resultType": "matrix",
+                        "result": [
+                            {
+                                "metric": {"host": "app-1", "quantile": "0.95"},
+                                "values": [
+                                    [1710000000, "120.5"],
+                                    [1710000060, "98.0"]
+                                ]
+                            }
+                        ]
+                    }
+                }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args([
+            "logs",
+            "stats",
+            "quantile_over_time(0.95, ({host=\"app-1\", role=\"web\"} |= \"gunicorn.access\" | json | unwrap server_time_ms)[1m])",
+            "--ds",
+            "loki-prod",
+            "--from",
+            "2024-01-01T00:00:00Z",
+            "--to",
+            "2024-01-01T01:00:00Z",
+            "--step",
+            "1m",
+            "--json",
+        ]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let payload: Value = serde_json::from_str(&stdout).expect("valid json output");
+
+    assert_eq!(payload["result_type"], "matrix");
+    assert_eq!(payload["count"], 2);
+    assert_eq!(payload["samples"][0]["value"], "120.5");
+    assert_eq!(payload["samples"][1]["value"], "98.0");
+
+    stats_mock.assert();
+}
+
+#[test]
+fn logs_stats_fails_for_stream_queries() {
+    let server = MockServer::start();
+    let stats_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/proxy/uid/loki-prod/loki/api/v1/query_range")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                    "status": "success",
+                    "data": {
+                        "resultType": "streams",
+                        "result": [
+                            {
+                                "stream": {"service": "api"},
+                                "values": [["1710000000000000000", "line"]]
+                            }
+                        ]
+                    }
+                }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args([
+            "logs",
+            "stats",
+            "{service=\"api\"}",
+            "--ds",
+            "loki-prod",
+            "--from",
+            "2024-01-01T00:00:00Z",
+            "--to",
+            "2024-01-01T01:00:00Z",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("expects metric LogQL"));
+
+    stats_mock.assert();
+}
+
+#[test]
 fn metrics_query_json_returns_vector_samples() {
     let server = MockServer::start();
     let metrics_mock = server.mock(|when, then| {

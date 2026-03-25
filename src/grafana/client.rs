@@ -82,6 +82,32 @@ impl GrafanaClient {
         Ok(response.data.streams)
     }
 
+    pub fn query_loki_stats_range(
+        &self,
+        datasource_uid: &str,
+        query: &str,
+        start_ns: &str,
+        end_ns: &str,
+        step_seconds: &str,
+    ) -> Result<PrometheusData> {
+        let endpoint = format!(
+            "{}/api/datasources/proxy/uid/{}/loki/api/v1/query_range",
+            self.base_url.trim_end_matches('/'),
+            datasource_uid
+        );
+
+        let params = vec![
+            ("query", query.to_string()),
+            ("start", start_ns.to_string()),
+            ("end", end_ns.to_string()),
+            ("step", step_seconds.to_string()),
+        ];
+
+        let body = self.get_text(&endpoint, Some(&params), "querying Loki stats")?;
+
+        parse_query_response(&body, "Loki stats query")
+    }
+
     pub fn query_prometheus_instant(
         &self,
         datasource_uid: &str,
@@ -101,7 +127,7 @@ impl GrafanaClient {
 
         let body = self.get_text(&endpoint, Some(&params), "querying Prometheus instant API")?;
 
-        parse_prometheus_response(&body)
+        parse_query_response(&body, "Prometheus instant query")
     }
 
     pub fn query_prometheus_range(
@@ -127,7 +153,7 @@ impl GrafanaClient {
 
         let body = self.get_text(&endpoint, Some(&params), "querying Prometheus range API")?;
 
-        parse_prometheus_response(&body)
+        parse_query_response(&body, "Prometheus range query")
     }
 
     pub fn search_tempo(
@@ -195,13 +221,13 @@ impl GrafanaClient {
     }
 }
 
-fn parse_prometheus_response(body: &str) -> Result<PrometheusData> {
-    let response: PrometheusQueryResponse =
-        serde_json::from_str(body).context("failed to parse Prometheus query response JSON")?;
+fn parse_query_response(body: &str, query_kind: &str) -> Result<PrometheusData> {
+    let response: PrometheusQueryResponse = serde_json::from_str(body)
+        .with_context(|| format!("failed to parse {query_kind} response JSON"))?;
 
     if response.status != "success" {
         bail!(
-            "Prometheus query returned non-success status: {}",
+            "{query_kind} returned non-success status: {}",
             response.status
         );
     }
