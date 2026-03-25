@@ -93,6 +93,14 @@ fn run() -> Result<()> {
                     let result = commands::sql::query(&ctx, args)?;
                     output::emit(output_mode, &result)?;
                 }
+                SqlCommands::Tables(args) => {
+                    let result = commands::sql::tables(&ctx, args)?;
+                    output::emit(output_mode, &result)?;
+                }
+                SqlCommands::Describe(args) => {
+                    let result = commands::sql::describe(&ctx, args)?;
+                    output::emit(output_mode, &result)?;
+                }
             }
         }
     }

@@ -124,7 +124,22 @@ lgtmcli traces get <trace_id> --ds tempo-prod
 
 ## SQL (Postgres/MySQL/MSSQL datasources)
 
-Run read-only SQL against Grafana SQL datasources:
+Discover tables:
+
+```bash
+lgtmcli sql tables --ds pg-read-replica
+lgtmcli sql tables --ds pg-read-replica --schema public --like user%
+```
+
+Describe a table:
+
+```bash
+lgtmcli sql describe users --schema public --ds pg-read-replica
+# or schema-qualified:
+lgtmcli sql describe public.users --ds pg-read-replica
+```
+
+Run read-only SQL:
 
 ```bash
 lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds pg-read-replica
@@ -143,6 +158,8 @@ lgtmcli ds list --json
 lgtmcli logs stats 'rate({service="api"}[5m])' --ds loki-prod --since 1h --step 1m --json
 lgtmcli metrics range 'up' --ds mimir-prod --since 15m --step 30s --json
 lgtmcli traces search '{}' --ds tempo-prod --since 1h --json
+lgtmcli sql tables --ds pg-read-replica --json
+lgtmcli sql describe users --schema public --ds pg-read-replica --json
 lgtmcli sql query 'select now() as ts' --ds pg-read-replica --json
 ```
 
@@ -175,6 +192,8 @@ Commands with time ranges support either:
   - `traces search`
   - `traces get`
 - **sql**
+  - `sql tables`
+  - `sql describe`
   - `sql query`
 
 ### API routes used via Grafana datasource proxy

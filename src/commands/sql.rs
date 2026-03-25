@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::app::AppContext;
-use crate::cli::SqlQueryArgs;
+use crate::cli::{SqlDescribeArgs, SqlQueryArgs, SqlTablesArgs};
 use crate::output::{TableOutput, render_aligned_table};
 
 const SUPPORTED_SQL_TYPES: [&str; 3] = ["postgres", "mysql", "mssql"];
@@ -28,27 +28,36 @@ pub fn query(ctx: &AppContext, args: SqlQueryArgs) -> Result<SqlQueryResult> {
     let datasource = ctx.grafana.fetch_datasource_by_uid(&args.datasource_uid)?;
     ensure_supported_sql_type(&datasource.ds_type)?;
 
-    let response =
-        ctx.grafana
-            .query_datasource_sql(&args.datasource_uid, &datasource.ds_type, &args.query)?;
+    run_sql_query(
+        ctx,
+        datasource.uid,
+        datasource.ds_type,
+        args.query,
+        args.limit,
+    )
+}
 
-    let parsed = parse_ds_query_result(&response)?;
+pub fn tables(ctx: &AppContext, args: SqlTablesArgs) -> Result<SqlQueryResult> {
+    let datasource = ctx.grafana.fetch_datasource_by_uid(&args.datasource_uid)?;
+    ensure_supported_sql_type(&datasource.ds_type)?;
 
-    let total_row_count = parsed.rows.len();
-    let rows: Vec<BTreeMap<String, String>> = parsed.rows.into_iter().take(args.limit).collect();
-    let row_count = rows.len();
-    let truncated = row_count < total_row_count;
+    let query = build_tables_query(
+        &datasource.ds_type,
+        args.schema.as_deref(),
+        args.like.as_deref(),
+    )?;
 
-    Ok(SqlQueryResult {
-        datasource_uid: args.datasource_uid,
-        datasource_type: datasource.ds_type,
-        query: args.query,
-        columns: parsed.columns,
-        row_count,
-        total_row_count,
-        truncated,
-        rows,
-    })
+    run_sql_query(ctx, datasource.uid, datasource.ds_type, query, args.limit)
+}
+
+pub fn describe(ctx: &AppContext, args: SqlDescribeArgs) -> Result<SqlQueryResult> {
+    let datasource = ctx.grafana.fetch_datasource_by_uid(&args.datasource_uid)?;
+    ensure_supported_sql_type(&datasource.ds_type)?;
+
+    let (schema, table) = resolve_schema_and_table(&args.table, args.schema.as_deref())?;
+    let query = build_describe_query(&datasource.ds_type, schema.as_deref(), &table)?;
+
+    run_sql_query(ctx, datasource.uid, datasource.ds_type, query, args.limit)
 }
 
 impl TableOutput for SqlQueryResult {
@@ -87,6 +96,36 @@ struct ParsedSqlTable {
     rows: Vec<BTreeMap<String, String>>,
 }
 
+fn run_sql_query(
+    ctx: &AppContext,
+    datasource_uid: String,
+    datasource_type: String,
+    query: String,
+    limit: usize,
+) -> Result<SqlQueryResult> {
+    let response = ctx
+        .grafana
+        .query_datasource_sql(&datasource_uid, &datasource_type, &query)?;
+
+    let parsed = parse_ds_query_result(&response)?;
+
+    let total_row_count = parsed.rows.len();
+    let rows: Vec<BTreeMap<String, String>> = parsed.rows.into_iter().take(limit).collect();
+    let row_count = rows.len();
+    let truncated = row_count < total_row_count;
+
+    Ok(SqlQueryResult {
+        datasource_uid,
+        datasource_type,
+        query,
+        columns: parsed.columns,
+        row_count,
+        total_row_count,
+        truncated,
+        rows,
+    })
+}
+
 fn ensure_supported_sql_type(ds_type: &str) -> Result<()> {
     if SUPPORTED_SQL_TYPES
         .iter()
@@ -98,6 +137,108 @@ fn ensure_supported_sql_type(ds_type: &str) -> Result<()> {
     bail!(
         "datasource type '{ds_type}' is not a supported SQL datasource type (supported: postgres, mysql, mssql)"
     )
+}
+
+fn build_tables_query(ds_type: &str, schema: Option<&str>, like: Option<&str>) -> Result<String> {
+    let mut query = String::from(
+        "SELECT table_schema AS schema_name, table_name\nFROM information_schema.tables\nWHERE table_type = 'BASE TABLE'",
+    );
+
+    match ds_type.to_ascii_lowercase().as_str() {
+        "postgres" => {
+            query.push_str("\n  AND table_schema NOT IN ('pg_catalog', 'information_schema')")
+        }
+        "mysql" => query.push_str(
+            "\n  AND table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')",
+        ),
+        "mssql" => {
+            query.push_str("\n  AND table_schema NOT IN ('INFORMATION_SCHEMA', 'sys')")
+        }
+        other => bail!("unsupported SQL datasource type '{other}'"),
+    }
+
+    if let Some(schema) = schema {
+        query.push_str(&format!(
+            "\n  AND table_schema = {}",
+            sql_string_literal(schema)
+        ));
+    }
+    if let Some(pattern) = like {
+        query.push_str(&format!(
+            "\n  AND table_name LIKE {}",
+            sql_string_literal(pattern)
+        ));
+    }
+
+    query.push_str("\nORDER BY table_schema, table_name");
+    Ok(query)
+}
+
+fn resolve_schema_and_table(
+    table_input: &str,
+    schema_flag: Option<&str>,
+) -> Result<(Option<String>, String)> {
+    let trimmed = table_input.trim();
+    if trimmed.is_empty() {
+        bail!("table name must not be empty");
+    }
+
+    let dot_count = trimmed.matches('.').count();
+    if dot_count > 1 {
+        bail!("table must be either <table> or <schema.table>");
+    }
+
+    if let Some((schema_from_table, table_name)) = trimmed.split_once('.') {
+        if schema_flag.is_some() {
+            bail!("use either <schema.table> or --schema, not both");
+        }
+        if schema_from_table.trim().is_empty() || table_name.trim().is_empty() {
+            bail!("table must be either <table> or <schema.table>");
+        }
+
+        return Ok((
+            Some(schema_from_table.trim().to_string()),
+            table_name.trim().to_string(),
+        ));
+    }
+
+    Ok((schema_flag.map(ToOwned::to_owned), trimmed.to_string()))
+}
+
+fn build_describe_query(ds_type: &str, schema: Option<&str>, table: &str) -> Result<String> {
+    let mut query = String::from(
+        "SELECT table_schema AS schema_name, column_name, data_type, is_nullable, column_default, ordinal_position\nFROM information_schema.columns\nWHERE table_name = ",
+    );
+    query.push_str(&sql_string_literal(table));
+
+    match ds_type.to_ascii_lowercase().as_str() {
+        "postgres" => {
+            if let Some(schema) = schema {
+                query.push_str(&format!(
+                    "\n  AND table_schema = {}",
+                    sql_string_literal(schema)
+                ));
+            } else {
+                query.push_str("\n  AND table_schema NOT IN ('pg_catalog', 'information_schema')");
+            }
+        }
+        "mysql" | "mssql" => {
+            if let Some(schema) = schema {
+                query.push_str(&format!(
+                    "\n  AND table_schema = {}",
+                    sql_string_literal(schema)
+                ));
+            }
+        }
+        other => bail!("unsupported SQL datasource type '{other}'"),
+    }
+
+    query.push_str("\nORDER BY table_schema, ordinal_position");
+    Ok(query)
+}
+
+fn sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 fn parse_ds_query_result(payload: &Value) -> Result<ParsedSqlTable> {
@@ -252,7 +393,10 @@ fn first_sql_word(sql: &str) -> Option<&str> {
 mod tests {
     use serde_json::json;
 
-    use super::{parse_ds_query_result, validate_read_only_sql};
+    use super::{
+        build_describe_query, build_tables_query, parse_ds_query_result, resolve_schema_and_table,
+        validate_read_only_sql,
+    };
 
     #[test]
     fn allows_select_queries() {
@@ -302,5 +446,32 @@ mod tests {
         assert_eq!(parsed.rows.len(), 2);
         assert_eq!(parsed.rows[0].get("id").unwrap(), "1");
         assert_eq!(parsed.rows[0].get("email").unwrap(), "a@example.com");
+    }
+
+    #[test]
+    fn resolve_schema_and_table_from_qualified_name() {
+        let (schema, table) = resolve_schema_and_table("public.users", None).expect("parse");
+        assert_eq!(schema.as_deref(), Some("public"));
+        assert_eq!(table, "users");
+    }
+
+    #[test]
+    fn resolve_schema_and_table_rejects_both_inputs() {
+        let result = resolve_schema_and_table("public.users", Some("public"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_tables_query_for_postgres_excludes_system_schemas() {
+        let query = build_tables_query("postgres", None, None).expect("query");
+        assert!(query.contains("pg_catalog"));
+        assert!(query.contains("information_schema"));
+    }
+
+    #[test]
+    fn build_describe_query_for_schema() {
+        let query = build_describe_query("postgres", Some("public"), "users").expect("query");
+        assert!(query.contains("table_name = 'users'"));
+        assert!(query.contains("table_schema = 'public'"));
     }
 }

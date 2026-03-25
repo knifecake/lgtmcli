@@ -455,6 +455,155 @@ fn sql_query_json_returns_rows_and_truncates_with_limit() {
 }
 
 #[test]
+fn sql_tables_lists_rows() {
+    let server = MockServer::start();
+
+    let datasource_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/uid/pg-ro")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "id": 42,
+                "uid": "pg-ro",
+                "name": "Postgres Read Replica",
+                "type": "postgres",
+                "isDefault": false
+            }"#,
+            );
+    });
+
+    let query_mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/ds/query")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "results": {
+                    "A": {
+                        "frames": [
+                            {
+                                "schema": {
+                                    "fields": [
+                                        {"name": "schema_name"},
+                                        {"name": "table_name"}
+                                    ]
+                                },
+                                "data": {
+                                    "values": [
+                                        ["public", "public"],
+                                        ["users", "orders"]
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args(["sql", "tables", "--ds", "pg-ro", "--json"]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let payload: Value = serde_json::from_str(&stdout).expect("valid json output");
+
+    assert_eq!(payload["columns"][0], "schema_name");
+    assert_eq!(payload["columns"][1], "table_name");
+    assert_eq!(payload["row_count"], 2);
+    assert_eq!(payload["rows"][0]["table_name"], "users");
+
+    datasource_mock.assert();
+    query_mock.assert();
+}
+
+#[test]
+fn sql_describe_lists_columns() {
+    let server = MockServer::start();
+
+    let datasource_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources/uid/pg-ro")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "id": 42,
+                "uid": "pg-ro",
+                "name": "Postgres Read Replica",
+                "type": "postgres",
+                "isDefault": false
+            }"#,
+            );
+    });
+
+    let query_mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/ds/query")
+            .header("authorization", "Bearer test-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "results": {
+                    "A": {
+                        "frames": [
+                            {
+                                "schema": {
+                                    "fields": [
+                                        {"name": "schema_name"},
+                                        {"name": "column_name"},
+                                        {"name": "data_type"}
+                                    ]
+                                },
+                                "data": {
+                                    "values": [
+                                        ["public", "public"],
+                                        ["id", "email"],
+                                        ["bigint", "text"]
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args([
+            "sql", "describe", "users", "--schema", "public", "--ds", "pg-ro", "--json",
+        ]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let payload: Value = serde_json::from_str(&stdout).expect("valid json output");
+
+    assert_eq!(payload["row_count"], 2);
+    assert_eq!(payload["rows"][0]["column_name"], "id");
+    assert_eq!(payload["rows"][1]["data_type"], "text");
+
+    datasource_mock.assert();
+    query_mock.assert();
+}
+
+#[test]
 fn sql_query_rejects_non_sql_datasource_types() {
     let server = MockServer::start();
 

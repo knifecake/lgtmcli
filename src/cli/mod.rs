@@ -236,9 +236,16 @@ pub struct TraceGetArgs {
 }
 
 #[derive(Subcommand)]
+#[command(
+    after_help = "EXAMPLES:\n  lgtmcli sql tables --ds pg-read-replica\n  lgtmcli sql tables --ds pg-read-replica --schema public --like user%\n  lgtmcli sql describe users --ds pg-read-replica\n  lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds pg-read-replica"
+)]
 pub enum SqlCommands {
     /// Run a read-only SQL query against SQL datasources (postgres/mysql/mssql)
     Query(SqlQueryArgs),
+    /// List tables from a SQL datasource
+    Tables(SqlTablesArgs),
+    /// Describe columns for a table in a SQL datasource
+    Describe(SqlDescribeArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -252,5 +259,42 @@ pub struct SqlQueryArgs {
 
     /// Maximum number of rows to return in CLI output
     #[arg(long, default_value_t = 200)]
+    pub limit: usize,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct SqlTablesArgs {
+    /// SQL datasource UID (Grafana datasource UID)
+    #[arg(long = "ds", value_name = "UID")]
+    pub datasource_uid: String,
+
+    /// Restrict to a specific schema/catalog (depends on datasource type)
+    #[arg(long, value_name = "SCHEMA")]
+    pub schema: Option<String>,
+
+    /// Optional SQL LIKE pattern for table names (e.g. user%, %event%)
+    #[arg(long, value_name = "PATTERN")]
+    pub like: Option<String>,
+
+    /// Maximum number of rows to return in CLI output
+    #[arg(long, default_value_t = 200)]
+    pub limit: usize,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct SqlDescribeArgs {
+    /// Table name (or schema.table)
+    pub table: String,
+
+    /// SQL datasource UID (Grafana datasource UID)
+    #[arg(long = "ds", value_name = "UID")]
+    pub datasource_uid: String,
+
+    /// Schema/catalog override (depends on datasource type)
+    #[arg(long, value_name = "SCHEMA")]
+    pub schema: Option<String>,
+
+    /// Maximum number of rows to return in CLI output
+    #[arg(long, default_value_t = 500)]
     pub limit: usize,
 }
