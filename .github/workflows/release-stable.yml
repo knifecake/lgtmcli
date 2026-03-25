@@ -28,12 +28,7 @@ jobs:
             exit 1
           fi
 
-          cargo_version="$(python3 - <<'PY'
-import pathlib, tomllib
-cargo = tomllib.loads(pathlib.Path('Cargo.toml').read_text())
-print(cargo['package']['version'])
-PY
-          )"
+          cargo_version="$(python3 -c "import pathlib,tomllib;print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version'])")"
 
           expected="v${cargo_version}"
           if [[ "$tag" != "$expected" ]]; then
