@@ -1,0 +1,15 @@
+# Rust build artifacts
+/target
+
+# Cargo lockfile
+# Keep Cargo.lock for binaries/apps (this project is a binary), so don't ignore it.
+
+# Local environment secrets/config
+.env
+.env.*
+!.env.example
+*.envrc
+!.envrc.example
+
+# macOS
+.DS_Store
