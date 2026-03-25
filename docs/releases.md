@@ -19,7 +19,7 @@ git push origin v0.2.0
 That runs `.github/workflows/release-stable.yml` and publishes:
 
 - `lgtmcli-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz`
-- `lgtmcli-vX.Y.Z-x86_64-apple-darwin.tar.gz`
+- `lgtmcli-vX.Y.Z-aarch64-unknown-linux-musl.tar.gz`
 - `lgtmcli-vX.Y.Z-aarch64-apple-darwin.tar.gz`
 - `lgtmcli-vX.Y.Z-x86_64-pc-windows-msvc.zip`
 - `checksums.txt`
