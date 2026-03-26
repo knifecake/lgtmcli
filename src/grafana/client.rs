@@ -45,10 +45,11 @@ impl GrafanaClient {
     }
 
     pub fn fetch_datasource_by_uid(&self, uid: &str) -> Result<DataSource> {
+        let encoded_uid = encode_path_segment(uid);
         let endpoint = format!(
             "{}/api/datasources/uid/{}",
             self.base_url.trim_end_matches('/'),
-            uid
+            encoded_uid
         );
         let body = self.get_text(&endpoint, None, "fetching datasource by UID")?;
 
@@ -96,10 +97,11 @@ impl GrafanaClient {
         limit: u32,
         direction: &str,
     ) -> Result<Vec<LokiStream>> {
+        let encoded_uid = encode_path_segment(datasource_uid);
         let endpoint = format!(
             "{}/api/datasources/proxy/uid/{}/loki/api/v1/query_range",
             self.base_url.trim_end_matches('/'),
-            datasource_uid
+            encoded_uid
         );
 
         let params = vec![
@@ -133,10 +135,11 @@ impl GrafanaClient {
         end_ns: &str,
         step_seconds: &str,
     ) -> Result<PrometheusData> {
+        let encoded_uid = encode_path_segment(datasource_uid);
         let endpoint = format!(
             "{}/api/datasources/proxy/uid/{}/loki/api/v1/query_range",
             self.base_url.trim_end_matches('/'),
-            datasource_uid
+            encoded_uid
         );
 
         let params = vec![
@@ -157,10 +160,11 @@ impl GrafanaClient {
         query: &str,
         time_seconds: &str,
     ) -> Result<PrometheusData> {
+        let encoded_uid = encode_path_segment(datasource_uid);
         let endpoint = format!(
             "{}/api/datasources/proxy/uid/{}/api/v1/query",
             self.base_url.trim_end_matches('/'),
-            datasource_uid
+            encoded_uid
         );
 
         let params = vec![
@@ -181,10 +185,11 @@ impl GrafanaClient {
         end_seconds: &str,
         step_seconds: &str,
     ) -> Result<PrometheusData> {
+        let encoded_uid = encode_path_segment(datasource_uid);
         let endpoint = format!(
             "{}/api/datasources/proxy/uid/{}/api/v1/query_range",
             self.base_url.trim_end_matches('/'),
-            datasource_uid
+            encoded_uid
         );
 
         let params = vec![
@@ -207,10 +212,11 @@ impl GrafanaClient {
         end_seconds: &str,
         limit: u32,
     ) -> Result<Vec<Value>> {
+        let encoded_uid = encode_path_segment(datasource_uid);
         let endpoint = format!(
             "{}/api/datasources/proxy/uid/{}/api/search",
             self.base_url.trim_end_matches('/'),
-            datasource_uid
+            encoded_uid
         );
 
         let params = vec![
@@ -229,11 +235,13 @@ impl GrafanaClient {
     }
 
     pub fn fetch_trace(&self, datasource_uid: &str, trace_id: &str) -> Result<Value> {
+        let encoded_uid = encode_path_segment(datasource_uid);
+        let encoded_trace_id = encode_path_segment(trace_id);
         let endpoint = format!(
             "{}/api/datasources/proxy/uid/{}/api/v2/traces/{}",
             self.base_url.trim_end_matches('/'),
-            datasource_uid,
-            trace_id
+            encoded_uid,
+            encoded_trace_id
         );
 
         let body = self.get_text(&endpoint, None, "fetching trace by ID")?;
@@ -319,8 +327,46 @@ fn ensure_grafana_success(status: StatusCode, body: &str, action: &str) -> Resul
 }
 
 fn truncate_for_log(value: &str, max_len: usize) -> String {
-    if value.len() <= max_len {
+    if value.chars().count() <= max_len {
         return value.to_string();
     }
-    format!("{}...", &value[..max_len])
+
+    let truncated: String = value.chars().take(max_len).collect();
+    format!("{truncated}...")
+}
+
+fn encode_path_segment(segment: &str) -> String {
+    let mut encoded = String::with_capacity(segment.len());
+
+    for byte in segment.bytes() {
+        let is_unreserved =
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~');
+        if is_unreserved {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push('%');
+            encoded.push_str(&format!("{byte:02X}"));
+        }
+    }
+
+    encoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{encode_path_segment, truncate_for_log};
+
+    #[test]
+    fn truncate_for_log_handles_utf8_without_panicking() {
+        let value = "🔥error";
+        let truncated = truncate_for_log(value, 1);
+        assert_eq!(truncated, "🔥...");
+    }
+
+    #[test]
+    fn path_segments_are_percent_encoded() {
+        assert_eq!(encode_path_segment("pg/ro"), "pg%2Fro");
+        assert_eq!(encode_path_segment("trace id"), "trace%20id");
+        assert_eq!(encode_path_segment("abc-_.~123"), "abc-_.~123");
+    }
 }

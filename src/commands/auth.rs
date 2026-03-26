@@ -44,12 +44,12 @@ pub fn login(overrides: &AuthOverrides, no_verify: bool) -> Result<AuthLoginResu
 
     let base_url = match resolved.base_url {
         Some(value) => value.value,
-        None => prompt_for_value("Grafana URL")?,
+        None => prompt_for_value("Grafana URL", false)?,
     };
 
     let token = match resolved.token {
         Some(value) => value.value,
-        None => prompt_for_value("Grafana token")?,
+        None => prompt_for_value("Grafana token", true)?,
     };
 
     let config = GrafanaConfig {
@@ -105,16 +105,21 @@ impl TableOutput for AuthLoginResult {
     }
 }
 
-fn prompt_for_value(label: &str) -> Result<String> {
-    print!("{label}: ");
-    io::stdout().flush().context("failed to flush stdout")?;
+fn prompt_for_value(label: &str, secret: bool) -> Result<String> {
+    let raw = if secret {
+        rpassword::prompt_password(format!("{label}: ")).context("failed to read input")?
+    } else {
+        print!("{label}: ");
+        io::stdout().flush().context("failed to flush stdout")?;
 
-    let mut value = String::new();
-    io::stdin()
-        .read_line(&mut value)
-        .context("failed to read input")?;
+        let mut value = String::new();
+        io::stdin()
+            .read_line(&mut value)
+            .context("failed to read input")?;
+        value
+    };
 
-    let trimmed = value.trim().to_string();
+    let trimmed = raw.trim().to_string();
     if trimmed.is_empty() {
         return Err(anyhow!("{label} cannot be empty"));
     }

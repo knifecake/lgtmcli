@@ -75,6 +75,7 @@ When adding fields, prefer additive changes and avoid breaking existing JSON key
 
 - never commit secrets or real tokens
 - use least-privilege Grafana service account scopes
+- configure Grafana SQL datasources with read-only database credentials
 - ensure errors for 401/403 are clear and actionable
 
 ## Versioning and releases

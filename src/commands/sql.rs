@@ -22,7 +22,7 @@ pub struct SqlQueryResult {
 }
 
 pub fn query(ctx: &AppContext, args: SqlQueryArgs) -> Result<SqlQueryResult> {
-    validate_read_only_sql(&args.query)?;
+    validate_sql_query(&args.query)?;
 
     let datasource = ctx.grafana.fetch_datasource_by_uid(&args.datasource_uid)?;
 
@@ -480,31 +480,12 @@ fn json_value_to_display_string(value: &Value) -> String {
     }
 }
 
-fn validate_read_only_sql(sql: &str) -> Result<()> {
-    let trimmed = sql.trim();
-    if trimmed.is_empty() {
+fn validate_sql_query(sql: &str) -> Result<()> {
+    if sql.trim().is_empty() {
         bail!("SQL query must not be empty");
     }
 
-    let without_trailing = trimmed.trim_end_matches(';').trim_end();
-    if without_trailing.contains(';') {
-        bail!("multiple SQL statements are not allowed");
-    }
-
-    let first_word = first_sql_word(without_trailing)
-        .context("could not determine SQL statement type")?
-        .to_ascii_lowercase();
-
-    let allowed = ["select", "with", "show", "explain", "values"];
-    if allowed.contains(&first_word.as_str()) {
-        return Ok(());
-    }
-
-    bail!("only read-only SQL statements are allowed (SELECT/WITH/SHOW/EXPLAIN/VALUES)")
-}
-
-fn first_sql_word(sql: &str) -> Option<&str> {
-    sql.split_whitespace().next()
+    Ok(())
 }
 
 #[cfg(test)]
@@ -513,24 +494,18 @@ mod tests {
 
     use super::{
         build_describe_query, build_schemas_query, build_tables_query, normalize_sql_type,
-        parse_ds_query_result, resolve_schema_and_table, validate_read_only_sql,
+        parse_ds_query_result, resolve_schema_and_table, validate_sql_query,
     };
 
     #[test]
-    fn allows_select_queries() {
-        let result = validate_read_only_sql("SELECT * FROM users LIMIT 10;");
+    fn allows_non_select_queries_locally() {
+        let result = validate_sql_query("UPDATE users SET admin=true");
         assert!(result.is_ok());
     }
 
     #[test]
-    fn rejects_write_queries() {
-        let result = validate_read_only_sql("UPDATE users SET admin=true");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn rejects_multiple_statements() {
-        let result = validate_read_only_sql("SELECT 1; SELECT 2");
+    fn rejects_empty_queries() {
+        let result = validate_sql_query("   ");
         assert!(result.is_err());
     }
 
