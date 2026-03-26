@@ -1,8 +1,50 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use assert_cmd::Command;
 use httpmock::Method::{GET, POST};
 use httpmock::MockServer;
 use predicates::prelude::*;
 use serde_json::Value;
+
+fn make_temp_home(name: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock should be after unix epoch")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "lgtmcli-tests-{name}-{}-{nanos}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&path).expect("create temp home");
+    path
+}
+
+fn write_profile(home: &Path, url: &str, token: &str) {
+    write_profile_in_config_dir(&home.join(".config"), url, token);
+}
+
+fn write_profile_in_config_dir(config_dir: &Path, url: &str, token: &str) {
+    let profile_dir = config_dir.join("lgtmcli");
+    fs::create_dir_all(&profile_dir).expect("create profile directory");
+    let profile_path = profile_dir.join("profiles.json");
+    let body = serde_json::json!({
+        "schema_version": 1,
+        "active_profile": "default",
+        "profiles": {
+            "default": {
+                "grafana_url": url,
+                "grafana_token": token
+            }
+        }
+    });
+    fs::write(
+        &profile_path,
+        serde_json::to_string_pretty(&body).expect("json profile"),
+    )
+    .expect("write profile");
+}
 
 #[test]
 fn auth_status_succeeds_with_valid_credentials() {
@@ -52,6 +94,180 @@ fn auth_status_fails_on_unauthorized() {
         .stderr(predicate::str::contains("HTTP 401 Unauthorized"));
 
     datasource_mock.assert();
+}
+
+#[test]
+fn auth_uses_saved_profile_when_flags_and_env_are_missing() {
+    let server = MockServer::start();
+    let datasource_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources")
+            .header("authorization", "Bearer profile-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body("[]");
+    });
+
+    let home = make_temp_home("profile-only");
+    write_profile(&home, &server.url(""), "profile-token");
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("GRAFANA_URL")
+        .env_remove("GRAFANA_TOKEN")
+        .args(["auth", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("credentials look good"))
+        .stdout(predicate::str::contains("Token source: saved profile"));
+
+    datasource_mock.assert();
+}
+
+#[test]
+fn auth_uses_xdg_config_home_for_saved_profile() {
+    let server = MockServer::start();
+    let datasource_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources")
+            .header("authorization", "Bearer xdg-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body("[]");
+    });
+
+    let home = make_temp_home("xdg-config-home-home");
+    let xdg_config_home = make_temp_home("xdg-config-home-root");
+    write_profile_in_config_dir(&xdg_config_home, &server.url(""), "xdg-token");
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config_home)
+        .env_remove("GRAFANA_URL")
+        .env_remove("GRAFANA_TOKEN")
+        .args(["auth", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("credentials look good"))
+        .stdout(predicate::str::contains("Token source: saved profile"));
+
+    datasource_mock.assert();
+}
+
+#[test]
+fn auth_env_overrides_saved_profile() {
+    let server = MockServer::start();
+    let datasource_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources")
+            .header("authorization", "Bearer env-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body("[]");
+    });
+
+    let home = make_temp_home("env-overrides-profile");
+    write_profile(&home, "https://example.invalid", "profile-token");
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME")
+        .env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "env-token")
+        .args(["auth", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Token source: environment variable",
+        ));
+
+    datasource_mock.assert();
+}
+
+#[test]
+fn auth_flags_override_env_and_saved_profile() {
+    let server = MockServer::start();
+    let datasource_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources")
+            .header("authorization", "Bearer flag-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body("[]");
+    });
+
+    let home = make_temp_home("flags-override-env-profile");
+    write_profile(&home, "https://example.invalid", "profile-token");
+
+    let url = server.url("");
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME")
+        .env("GRAFANA_URL", "https://another.invalid")
+        .env("GRAFANA_TOKEN", "env-token")
+        .args(["--url", &url, "--token", "flag-token", "auth", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Token source: --url/--token flag"));
+
+    datasource_mock.assert();
+}
+
+#[test]
+fn auth_login_saves_profile_and_allows_followup_status_without_env() {
+    let server = MockServer::start();
+
+    let home = make_temp_home("login-saves-profile");
+
+    let url = server.url("");
+
+    let mut login_cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    login_cmd
+        .env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("GRAFANA_URL")
+        .env_remove("GRAFANA_TOKEN")
+        .args([
+            "--url",
+            &url,
+            "--token",
+            "saved-token",
+            "auth",
+            "login",
+            "--no-verify",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("saved Grafana credentials"));
+
+    let status_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/datasources")
+            .header("authorization", "Bearer saved-token");
+
+        then.status(200)
+            .header("content-type", "application/json")
+            .body("[]");
+    });
+
+    let mut status_cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    status_cmd
+        .env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("GRAFANA_URL")
+        .env_remove("GRAFANA_TOKEN")
+        .args(["auth", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Token source: saved profile"));
+
+    status_mock.assert();
 }
 
 #[test]

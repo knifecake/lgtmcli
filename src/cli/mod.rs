@@ -12,6 +12,14 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
 
+    /// Grafana base URL (highest precedence auth source)
+    #[arg(long = "url", global = true, value_name = "URL")]
+    pub grafana_url: Option<String>,
+
+    /// Grafana service account token (highest precedence auth source)
+    #[arg(long = "token", global = true, value_name = "TOKEN")]
+    pub grafana_token: Option<String>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -47,8 +55,17 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum AuthCommands {
-    /// Verify that GRAFANA_URL and GRAFANA_TOKEN can access Grafana API
+    /// Verify resolved Grafana credentials can access Grafana API
     Status,
+    /// Save Grafana credentials in a local profile (prompts for missing fields)
+    Login(AuthLoginArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct AuthLoginArgs {
+    /// Skip API check before saving profile
+    #[arg(long)]
+    pub no_verify: bool,
 }
 
 #[derive(Subcommand)]
