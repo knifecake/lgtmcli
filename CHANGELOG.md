@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add `scripts/smoke-test.sh` to run a quick end-to-end verification of an installed `lgtmcli` binary against configured Grafana datasources (without embedding credentials)
+
 ## v0.2.0 - 2026-03-26
 
 - Add an `lgtmcli` agent skill at `skills/lgtmcli/SKILL.md` covering auth recovery, datasource discovery, SQL schema/table introspection, incident query examples, best practices, and `npx skills` installation
