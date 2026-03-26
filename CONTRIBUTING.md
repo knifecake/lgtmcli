@@ -45,6 +45,13 @@ make lint       # fmt + check + clippy -D warnings
 make test       # run unit + integration tests
 ```
 
+Release smoke test (installed binary, no credentials in script):
+
+```bash
+./scripts/smoke-test.sh
+# optional overrides, e.g. LGTMCLI_LOGS_DS=loki-prod LGTMCLI_SQL_DS=pg-ro ./scripts/smoke-test.sh
+```
+
 ## Testing approach
 
 This project uses two layers of tests:
