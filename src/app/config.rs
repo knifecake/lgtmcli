@@ -11,12 +11,6 @@ use serde_json::Value;
 const PROFILE_SCHEMA_VERSION: u32 = 1;
 const DEFAULT_PROFILE_NAME: &str = "default";
 
-#[derive(Clone, Debug, Default)]
-pub struct AuthOverrides {
-    pub base_url: Option<String>,
-    pub token: Option<String>,
-}
-
 #[derive(Clone, Debug)]
 pub struct GrafanaConfig {
     pub base_url: String,
@@ -28,17 +22,17 @@ pub struct GrafanaConfig {
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfigSource {
-    Flag,
     Env,
     Profile,
+    Prompt,
 }
 
 impl ConfigSource {
     pub fn as_label(self) -> &'static str {
         match self {
-            Self::Flag => "--url/--token flag",
             Self::Env => "environment variable",
             Self::Profile => "saved profile",
+            Self::Prompt => "interactive prompt",
         }
     }
 }
@@ -58,15 +52,11 @@ pub struct ResolvedValue {
 impl ResolvedAuthInputs {
     pub fn into_required(self) -> Result<GrafanaConfig> {
         let base_url = self.base_url.ok_or_else(|| {
-            anyhow::anyhow!(
-                "missing Grafana URL. Provide --url, set GRAFANA_URL, or run `lgtmcli auth login`."
-            )
+            anyhow::anyhow!("missing Grafana URL. Set GRAFANA_URL or run `lgtmcli auth login`.")
         })?;
 
         let token = self.token.ok_or_else(|| {
-            anyhow::anyhow!(
-                "missing Grafana token. Provide --token, set GRAFANA_TOKEN, or run `lgtmcli auth login`."
-            )
+            anyhow::anyhow!("missing Grafana token. Set GRAFANA_TOKEN or run `lgtmcli auth login`.")
         })?;
 
         Ok(GrafanaConfig {
@@ -107,24 +97,19 @@ struct LegacyProfileFile {
 }
 
 impl GrafanaConfig {
-    pub fn resolve(overrides: &AuthOverrides) -> Result<Self> {
-        resolve_auth_inputs(overrides)?.into_required()
+    pub fn resolve() -> Result<Self> {
+        resolve_auth_inputs()?.into_required()
     }
 }
 
-pub fn resolve_auth_inputs(overrides: &AuthOverrides) -> Result<ResolvedAuthInputs> {
+pub fn resolve_auth_inputs() -> Result<ResolvedAuthInputs> {
     let profile = load_saved_profile()?;
 
     let base_url = resolve_value(
-        overrides.base_url.clone(),
-        "--url",
         "GRAFANA_URL",
         profile.as_ref().map(|p| p.grafana_url.clone()),
     )?;
-
     let token = resolve_value(
-        overrides.token.clone(),
-        "--token",
         "GRAFANA_TOKEN",
         profile.as_ref().map(|p| p.grafana_token.clone()),
     )?;
@@ -316,19 +301,7 @@ impl StoredProfile {
     }
 }
 
-fn resolve_value(
-    flag_value: Option<String>,
-    flag_name: &str,
-    env_name: &str,
-    profile_value: Option<String>,
-) -> Result<Option<ResolvedValue>> {
-    if let Some(value) = flag_value {
-        return Ok(Some(ResolvedValue {
-            value: sanitize_non_empty(value, flag_name)?,
-            source: ConfigSource::Flag,
-        }));
-    }
-
+fn resolve_value(env_name: &str, profile_value: Option<String>) -> Result<Option<ResolvedValue>> {
     if let Some(value) = read_env(env_name)? {
         return Ok(Some(ResolvedValue {
             value,

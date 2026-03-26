@@ -5,20 +5,12 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
     name = "lgtmcli",
     version,
     about = "CLI for Grafana LGTM",
-    after_help = "EXAMPLES:\n  lgtmcli auth status\n  lgtmcli ds list --type loki\n  lgtmcli logs query '{service=\"api\"}' --ds loki-prod --since 1h\n  lgtmcli logs stats 'quantile_over_time(0.95, ({host=\"app-1\", role=\"web\"} |= \"gunicorn.access\" | json | unwrap server_time_ms)[1m])' --ds loki-prod --since 1h --step 1m\n  lgtmcli metrics range 'rate(http_requests_total[5m])' --ds mimir-prod --since 1h --step 30s\n  lgtmcli traces search '{ status = error }' --ds tempo-prod --since 1h --json\n  lgtmcli sql query 'select id, email from users limit 20' --ds pg-read-replica\n\nTIPS:\n  - Output defaults to table; use --json for scripts\n  - Use --ds with datasource UID from `lgtmcli ds list`"
+    after_help = "EXAMPLES:\n  lgtmcli auth status\n  lgtmcli d list --type loki\n  lgtmcli logs query '{service=\"api\"}' --datasource loki-prod --since 1h\n  lgtmcli logs stats 'quantile_over_time(0.95, ({host=\"app-1\", role=\"web\"} |= \"gunicorn.access\" | json | unwrap server_time_ms)[1m])' --datasource loki-prod --since 1h --step 1m\n  lgtmcli metrics range 'rate(http_requests_total[5m])' --datasource mimir-prod --since 1h --step 30s\n  lgtmcli traces search '{ status = error }' --datasource tempo-prod --since 1h --json\n  lgtmcli sql query 'select id, email from users limit 20' --datasource pg-read-replica\n\nTIPS:\n  - Output defaults to table; use --json for scripts\n  - Use --datasource with datasource UID from `lgtmcli d list`"
 )]
 pub struct Cli {
     /// Output JSON instead of human-readable table/text
-    #[arg(long, global = true)]
+    #[arg(short = 'j', long, global = true)]
     pub json: bool,
-
-    /// Grafana base URL (highest precedence auth source)
-    #[arg(long = "url", global = true, value_name = "URL")]
-    pub grafana_url: Option<String>,
-
-    /// Grafana service account token (highest precedence auth source)
-    #[arg(long = "token", global = true, value_name = "TOKEN")]
-    pub grafana_token: Option<String>,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -30,23 +22,27 @@ pub enum Commands {
         #[command(subcommand)]
         command: AuthCommands,
     },
-    #[command(visible_alias = "ds")]
+    #[command(visible_alias = "d")]
     Datasources {
         #[command(subcommand)]
         command: DatasourceCommands,
     },
+    #[command(visible_alias = "l")]
     Logs {
         #[command(subcommand)]
         command: LogsCommands,
     },
+    #[command(visible_alias = "m")]
     Metrics {
         #[command(subcommand)]
         command: MetricsCommands,
     },
+    #[command(visible_alias = "t")]
     Traces {
         #[command(subcommand)]
         command: TracesCommands,
     },
+    #[command(visible_alias = "s")]
     Sql {
         #[command(subcommand)]
         command: SqlCommands,
@@ -64,7 +60,7 @@ pub enum AuthCommands {
 #[derive(Debug, Clone, Args)]
 pub struct AuthLoginArgs {
     /// Skip API check before saving profile
-    #[arg(long)]
+    #[arg(short = 'n', long)]
     pub no_verify: bool,
 }
 
@@ -73,14 +69,14 @@ pub enum DatasourceCommands {
     /// List Grafana datasources
     List {
         /// Filter by datasource type (e.g. loki, prometheus, tempo, postgres)
-        #[arg(long = "type", value_name = "TYPE")]
+        #[arg(short = 't', long = "type", value_name = "TYPE")]
         ds_type: Option<String>,
     },
 }
 
 #[derive(Subcommand)]
 #[command(
-    after_help = "EXAMPLES:\n  lgtmcli logs query '{service=\"api\"}' --ds loki-prod --since 1h\n  lgtmcli logs query '{service=\"api\"} |= \"error\"' --ds loki-prod --since 1h\n  lgtmcli logs stats 'rate({service=\"api\"}[5m])' --ds loki-prod --since 1h --step 1m\n  lgtmcli logs stats 'avg by () (quantile_over_time(0.95, ({host=\"app-1\", role=\"web\"} |= \"gunicorn.access\" | json | unwrap server_time_ms)[1m]))' --ds loki-prod --since 1h --step 1m"
+    after_help = "EXAMPLES:\n  lgtmcli logs query '{service=\"api\"}' --datasource loki-prod --since 1h\n  lgtmcli logs query '{service=\"api\"} |= \"error\"' --datasource loki-prod --since 1h\n  lgtmcli logs stats 'rate({service=\"api\"}[5m])' --datasource loki-prod --since 1h --step 1m\n  lgtmcli logs stats 'avg by () (quantile_over_time(0.95, ({host=\"app-1\", role=\"web\"} |= \"gunicorn.access\" | json | unwrap server_time_ms)[1m]))' --datasource loki-prod --since 1h --step 1m"
 )]
 pub enum LogsCommands {
     /// Run a LogQL query over a time range
@@ -95,27 +91,27 @@ pub struct LogsQueryArgs {
     pub query: String,
 
     /// Logs datasource UID (Grafana datasource UID)
-    #[arg(long = "ds", value_name = "UID")]
+    #[arg(short = 'd', long = "datasource", value_name = "UID")]
     pub datasource_uid: String,
 
     /// Relative range from now (e.g. 15m, 1h, 24h)
-    #[arg(long, value_name = "DURATION")]
+    #[arg(short = 's', long, value_name = "DURATION")]
     pub since: Option<String>,
 
     /// RFC3339 timestamp for range start (must be used with --to)
-    #[arg(long, value_name = "TIMESTAMP")]
+    #[arg(short = 'f', long, value_name = "TIMESTAMP")]
     pub from: Option<String>,
 
     /// RFC3339 timestamp for range end (must be used with --from)
-    #[arg(long, value_name = "TIMESTAMP")]
+    #[arg(short = 't', long, value_name = "TIMESTAMP")]
     pub to: Option<String>,
 
     /// Maximum number of log lines to return
-    #[arg(long, default_value_t = 100)]
+    #[arg(short = 'n', long, default_value_t = 100)]
     pub limit: u32,
 
     /// Loki query direction
-    #[arg(long, value_enum, default_value_t = LogDirectionArg::Backward)]
+    #[arg(short = 'r', long, value_enum, default_value_t = LogDirectionArg::Backward)]
     pub direction: LogDirectionArg,
 }
 
@@ -125,23 +121,23 @@ pub struct LogsStatsArgs {
     pub query: String,
 
     /// Logs datasource UID (Grafana datasource UID)
-    #[arg(long = "ds", value_name = "UID")]
+    #[arg(short = 'd', long = "datasource", value_name = "UID")]
     pub datasource_uid: String,
 
     /// Relative range from now (e.g. 15m, 1h, 24h)
-    #[arg(long, value_name = "DURATION")]
+    #[arg(short = 's', long, value_name = "DURATION")]
     pub since: Option<String>,
 
     /// RFC3339 timestamp for range start (must be used with --to)
-    #[arg(long, value_name = "TIMESTAMP")]
+    #[arg(short = 'f', long, value_name = "TIMESTAMP")]
     pub from: Option<String>,
 
     /// RFC3339 timestamp for range end (must be used with --from)
-    #[arg(long, value_name = "TIMESTAMP")]
+    #[arg(short = 't', long, value_name = "TIMESTAMP")]
     pub to: Option<String>,
 
     /// Query resolution step (e.g. 30s, 1m)
-    #[arg(long, default_value = "1m", value_name = "DURATION")]
+    #[arg(short = 'p', long, default_value = "1m", value_name = "DURATION")]
     pub step: String,
 }
 
@@ -174,11 +170,11 @@ pub struct MetricsQueryArgs {
     pub query: String,
 
     /// Metrics datasource UID (Grafana datasource UID)
-    #[arg(long = "ds", value_name = "UID")]
+    #[arg(short = 'd', long = "datasource", value_name = "UID")]
     pub datasource_uid: String,
 
     /// RFC3339 timestamp for instant query evaluation (defaults to now)
-    #[arg(long, value_name = "TIMESTAMP")]
+    #[arg(short = 't', long, value_name = "TIMESTAMP")]
     pub time: Option<String>,
 }
 
@@ -188,23 +184,23 @@ pub struct MetricsRangeArgs {
     pub query: String,
 
     /// Metrics datasource UID (Grafana datasource UID)
-    #[arg(long = "ds", value_name = "UID")]
+    #[arg(short = 'd', long = "datasource", value_name = "UID")]
     pub datasource_uid: String,
 
     /// Relative range from now (e.g. 15m, 1h, 24h)
-    #[arg(long, value_name = "DURATION")]
+    #[arg(short = 's', long, value_name = "DURATION")]
     pub since: Option<String>,
 
     /// RFC3339 timestamp for range start (must be used with --to)
-    #[arg(long, value_name = "TIMESTAMP")]
+    #[arg(short = 'f', long, value_name = "TIMESTAMP")]
     pub from: Option<String>,
 
     /// RFC3339 timestamp for range end (must be used with --from)
-    #[arg(long, value_name = "TIMESTAMP")]
+    #[arg(short = 't', long, value_name = "TIMESTAMP")]
     pub to: Option<String>,
 
     /// Query resolution step (e.g. 15s, 1m)
-    #[arg(long, default_value = "30s", value_name = "DURATION")]
+    #[arg(short = 'p', long, default_value = "30s", value_name = "DURATION")]
     pub step: String,
 }
 
@@ -222,23 +218,23 @@ pub struct TracesSearchArgs {
     pub query: String,
 
     /// Traces datasource UID (Grafana datasource UID)
-    #[arg(long = "ds", value_name = "UID")]
+    #[arg(short = 'd', long = "datasource", value_name = "UID")]
     pub datasource_uid: String,
 
     /// Relative range from now (e.g. 15m, 1h, 24h)
-    #[arg(long, value_name = "DURATION")]
+    #[arg(short = 's', long, value_name = "DURATION")]
     pub since: Option<String>,
 
     /// RFC3339 timestamp for range start (must be used with --to)
-    #[arg(long, value_name = "TIMESTAMP")]
+    #[arg(short = 'f', long, value_name = "TIMESTAMP")]
     pub from: Option<String>,
 
     /// RFC3339 timestamp for range end (must be used with --from)
-    #[arg(long, value_name = "TIMESTAMP")]
+    #[arg(short = 't', long, value_name = "TIMESTAMP")]
     pub to: Option<String>,
 
     /// Maximum number of traces to return
-    #[arg(long, default_value_t = 20)]
+    #[arg(short = 'n', long, default_value_t = 20)]
     pub limit: u32,
 }
 
@@ -248,13 +244,13 @@ pub struct TraceGetArgs {
     pub trace_id: String,
 
     /// Traces datasource UID (Grafana datasource UID)
-    #[arg(long = "ds", value_name = "UID")]
+    #[arg(short = 'd', long = "datasource", value_name = "UID")]
     pub datasource_uid: String,
 }
 
 #[derive(Subcommand)]
 #[command(
-    after_help = "EXAMPLES:\n  lgtmcli sql schemas --ds pg-read-replica\n  lgtmcli sql schemas --ds pg-read-replica --like pub%\n  lgtmcli sql tables --ds pg-read-replica\n  lgtmcli sql tables --ds pg-read-replica --schema public --like user%\n  lgtmcli sql describe users --ds pg-read-replica\n  lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds pg-read-replica"
+    after_help = "EXAMPLES:\n  lgtmcli sql schemas --datasource pg-read-replica\n  lgtmcli sql schemas --datasource pg-read-replica --like pub%\n  lgtmcli sql tables --datasource pg-read-replica\n  lgtmcli sql tables --datasource pg-read-replica --schema public --like user%\n  lgtmcli sql describe users --datasource pg-read-replica\n  lgtmcli sql query 'select id, email from users order by id desc limit 20' --datasource pg-read-replica"
 )]
 pub enum SqlCommands {
     /// Run a SQL query against SQL datasources (postgres/mysql/mssql)
@@ -273,53 +269,53 @@ pub struct SqlQueryArgs {
     pub query: String,
 
     /// SQL datasource UID (Grafana datasource UID)
-    #[arg(long = "ds", value_name = "UID")]
+    #[arg(short = 'd', long = "datasource", value_name = "UID")]
     pub datasource_uid: String,
 
     /// Maximum number of rows to return in CLI output
-    #[arg(long, default_value_t = 200)]
+    #[arg(short = 'n', long, default_value_t = 200)]
     pub limit: usize,
 
     /// Skip datasource type gate and let Grafana decide whether the datasource can run SQL
-    #[arg(long)]
+    #[arg(short = 'f', long)]
     pub force: bool,
 }
 
 #[derive(Debug, Clone, Args)]
 pub struct SqlSchemasArgs {
     /// SQL datasource UID (Grafana datasource UID)
-    #[arg(long = "ds", value_name = "UID")]
+    #[arg(short = 'd', long = "datasource", value_name = "UID")]
     pub datasource_uid: String,
 
     /// Optional SQL LIKE pattern for schema names (e.g. pub%, %test%)
-    #[arg(long, value_name = "PATTERN")]
+    #[arg(short = 'l', long, value_name = "PATTERN")]
     pub like: Option<String>,
 
     /// Include system/internal schemas
-    #[arg(long)]
+    #[arg(short = 'i', long)]
     pub include_system: bool,
 
     /// Maximum number of rows to return in CLI output
-    #[arg(long, default_value_t = 200)]
+    #[arg(short = 'n', long, default_value_t = 200)]
     pub limit: usize,
 }
 
 #[derive(Debug, Clone, Args)]
 pub struct SqlTablesArgs {
     /// SQL datasource UID (Grafana datasource UID)
-    #[arg(long = "ds", value_name = "UID")]
+    #[arg(short = 'd', long = "datasource", value_name = "UID")]
     pub datasource_uid: String,
 
     /// Restrict to a specific schema/catalog (depends on datasource type)
-    #[arg(long, value_name = "SCHEMA")]
+    #[arg(short = 's', long, value_name = "SCHEMA")]
     pub schema: Option<String>,
 
     /// Optional SQL LIKE pattern for table names (e.g. user%, %event%)
-    #[arg(long, value_name = "PATTERN")]
+    #[arg(short = 'l', long, value_name = "PATTERN")]
     pub like: Option<String>,
 
     /// Maximum number of rows to return in CLI output
-    #[arg(long, default_value_t = 200)]
+    #[arg(short = 'n', long, default_value_t = 200)]
     pub limit: usize,
 }
 
@@ -329,14 +325,14 @@ pub struct SqlDescribeArgs {
     pub table: String,
 
     /// SQL datasource UID (Grafana datasource UID)
-    #[arg(long = "ds", value_name = "UID")]
+    #[arg(short = 'd', long = "datasource", value_name = "UID")]
     pub datasource_uid: String,
 
     /// Schema/catalog override (depends on datasource type)
-    #[arg(long, value_name = "SCHEMA")]
+    #[arg(short = 's', long, value_name = "SCHEMA")]
     pub schema: Option<String>,
 
     /// Maximum number of rows to return in CLI output
-    #[arg(long, default_value_t = 500)]
+    #[arg(short = 'n', long, default_value_t = 500)]
     pub limit: usize,
 }

@@ -192,37 +192,6 @@ fn auth_env_overrides_saved_profile() {
 }
 
 #[test]
-fn auth_flags_override_env_and_saved_profile() {
-    let server = MockServer::start();
-    let datasource_mock = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/datasources")
-            .header("authorization", "Bearer flag-token");
-
-        then.status(200)
-            .header("content-type", "application/json")
-            .body("[]");
-    });
-
-    let home = make_temp_home("flags-override-env-profile");
-    write_profile(&home, "https://example.invalid", "profile-token");
-
-    let url = server.url("");
-
-    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
-    cmd.env("HOME", &home)
-        .env_remove("XDG_CONFIG_HOME")
-        .env("GRAFANA_URL", "https://another.invalid")
-        .env("GRAFANA_TOKEN", "env-token")
-        .args(["--url", &url, "--token", "flag-token", "auth", "status"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Token source: --url/--token flag"));
-
-    datasource_mock.assert();
-}
-
-#[test]
 fn auth_login_saves_profile_and_allows_followup_status_without_env() {
     let server = MockServer::start();
 
@@ -234,17 +203,9 @@ fn auth_login_saves_profile_and_allows_followup_status_without_env() {
     login_cmd
         .env("HOME", &home)
         .env_remove("XDG_CONFIG_HOME")
-        .env_remove("GRAFANA_URL")
-        .env_remove("GRAFANA_TOKEN")
-        .args([
-            "--url",
-            &url,
-            "--token",
-            "saved-token",
-            "auth",
-            "login",
-            "--no-verify",
-        ])
+        .env("GRAFANA_URL", &url)
+        .env("GRAFANA_TOKEN", "saved-token")
+        .args(["auth", "login", "--no-verify"])
         .assert()
         .success()
         .stdout(predicate::str::contains("saved Grafana credentials"));
@@ -289,17 +250,9 @@ fn auth_login_hardens_profile_file_permissions() {
     login_cmd
         .env("HOME", &home)
         .env_remove("XDG_CONFIG_HOME")
-        .env_remove("GRAFANA_URL")
-        .env_remove("GRAFANA_TOKEN")
-        .args([
-            "--url",
-            "https://example.invalid",
-            "--token",
-            "new-token",
-            "auth",
-            "login",
-            "--no-verify",
-        ])
+        .env("GRAFANA_URL", "https://example.invalid")
+        .env("GRAFANA_TOKEN", "new-token")
+        .args(["auth", "login", "--no-verify"])
         .assert()
         .success();
 
@@ -330,7 +283,7 @@ fn datasources_list_json_applies_type_filter() {
     let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
     cmd.env("GRAFANA_URL", server.url(""))
         .env("GRAFANA_TOKEN", "test-token")
-        .args(["ds", "list", "--type", "loki", "--json"]);
+        .args(["d", "list", "--type", "loki", "--json"]);
 
     let assert = cmd.assert().success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
@@ -386,7 +339,7 @@ fn logs_query_json_returns_lines() {
             "logs",
             "query",
             "{service=\"api\"}",
-            "--ds",
+            "--datasource",
             "loki-prod",
             "--from",
             "2024-01-01T00:00:00Z",
@@ -445,7 +398,7 @@ fn logs_stats_json_returns_timeseries_samples() {
             "logs",
             "stats",
             "quantile_over_time(0.95, ({host=\"app-1\", role=\"web\"} |= \"gunicorn.access\" | json | unwrap server_time_ms)[1m])",
-            "--ds",
+            "--datasource",
             "loki-prod",
             "--from",
             "2024-01-01T00:00:00Z",
@@ -501,7 +454,7 @@ fn logs_stats_fails_for_stream_queries() {
             "logs",
             "stats",
             "{service=\"api\"}",
-            "--ds",
+            "--datasource",
             "loki-prod",
             "--from",
             "2024-01-01T00:00:00Z",
@@ -548,7 +501,7 @@ fn metrics_query_json_returns_vector_samples() {
             "metrics",
             "query",
             "up{job=\"api\"}",
-            "--ds",
+            "--datasource",
             "mimir-prod",
             "--time",
             "2024-01-01T00:00:00Z",
@@ -603,7 +556,7 @@ fn metrics_range_json_returns_matrix_samples() {
             "metrics",
             "range",
             "up{job=\"api\"}",
-            "--ds",
+            "--datasource",
             "mimir-prod",
             "--from",
             "2024-01-01T00:00:00Z",
@@ -688,7 +641,7 @@ fn sql_query_json_returns_rows_and_truncates_with_limit() {
             "sql",
             "query",
             "select id, email from users order by id",
-            "--ds",
+            "--datasource",
             "pg-ro",
             "--limit",
             "1",
@@ -773,7 +726,7 @@ fn sql_query_json_coerces_time_columns_to_rfc3339() {
             "sql",
             "query",
             "select opened_at, true as flag from users",
-            "--ds",
+            "--datasource",
             "pg-ro",
             "--json",
         ]);
@@ -845,7 +798,7 @@ fn sql_schemas_lists_rows() {
     let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
     cmd.env("GRAFANA_URL", server.url(""))
         .env("GRAFANA_TOKEN", "test-token")
-        .args(["sql", "schemas", "--ds", "pg-ro", "--json"]);
+        .args(["sql", "schemas", "--datasource", "pg-ro", "--json"]);
 
     let assert = cmd.assert().success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
@@ -917,7 +870,7 @@ fn sql_tables_lists_rows() {
     let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
     cmd.env("GRAFANA_URL", server.url(""))
         .env("GRAFANA_TOKEN", "test-token")
-        .args(["sql", "tables", "--ds", "pg-ro", "--json"]);
+        .args(["sql", "tables", "--datasource", "pg-ro", "--json"]);
 
     let assert = cmd.assert().success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
@@ -993,7 +946,14 @@ fn sql_describe_lists_columns() {
     cmd.env("GRAFANA_URL", server.url(""))
         .env("GRAFANA_TOKEN", "test-token")
         .args([
-            "sql", "describe", "users", "--schema", "public", "--ds", "pg-ro", "--json",
+            "sql",
+            "describe",
+            "users",
+            "--schema",
+            "public",
+            "--datasource",
+            "pg-ro",
+            "--json",
         ]);
 
     let assert = cmd.assert().success();
@@ -1068,7 +1028,7 @@ fn sql_describe_fails_when_table_not_found() {
     let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
     cmd.env("GRAFANA_URL", server.url(""))
         .env("GRAFANA_TOKEN", "test-token")
-        .args(["sql", "describe", "does_not_exist", "--ds", "pg-ro"])
+        .args(["sql", "describe", "does_not_exist", "--datasource", "pg-ro"])
         .assert()
         .failure()
         .stderr(predicate::str::contains(
@@ -1104,7 +1064,7 @@ fn sql_query_rejects_non_sql_datasource_types() {
     let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
     cmd.env("GRAFANA_URL", server.url(""))
         .env("GRAFANA_TOKEN", "test-token")
-        .args(["sql", "query", "select 1", "--ds", "loki-prod"])
+        .args(["sql", "query", "select 1", "--datasource", "loki-prod"])
         .assert()
         .failure()
         .stderr(predicate::str::contains(
@@ -1170,7 +1130,7 @@ fn sql_query_force_allows_unknown_datasource_type() {
             "sql",
             "query",
             "select 1 as value",
-            "--ds",
+            "--datasource",
             "custom-sql",
             "--force",
             "--json",
@@ -1216,7 +1176,7 @@ fn traces_search_json_returns_trace_summaries() {
             "traces",
             "search",
             "{ status = error }",
-            "--ds",
+            "--datasource",
             "tempo-main",
             "--from",
             "2024-01-01T00:00:00Z",
@@ -1263,7 +1223,7 @@ fn traces_get_prints_summary_in_table_mode() {
     let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
     cmd.env("GRAFANA_URL", server.url(""))
         .env("GRAFANA_TOKEN", "test-token")
-        .args(["traces", "get", "abc123", "--ds", "tempo-main"])
+        .args(["traces", "get", "abc123", "--datasource", "tempo-main"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Trace ID: abc123"))
