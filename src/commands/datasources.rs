@@ -135,7 +135,12 @@ mod tests {
     #[test]
     fn filter_postgres_matches_grafana_postgres_plugin_type() {
         let input = vec![
-            ds(1, "pg-ro", "grafana-postgresql-datasource", "Postgres Read Only"),
+            ds(
+                1,
+                "pg-ro",
+                "grafana-postgresql-datasource",
+                "Postgres Read Only",
+            ),
             ds(2, "loki-1", "loki", "Loki"),
         ];
 
