@@ -49,14 +49,30 @@ make install    # installs to ~/.local/bin/lgtmcli
 
 ## Authenticate
 
-Set Grafana URL + token (read-only service account recommended):
+`lgtmcli` resolves credentials with this precedence:
+
+1. CLI flags: `--url`, `--token`
+2. Environment: `GRAFANA_URL`, `GRAFANA_TOKEN`
+3. Saved profile: `$XDG_CONFIG_HOME/lgtmcli/profiles.json` (fallback: `~/.config/lgtmcli/profiles.json`)
+
+### Quick login (recommended)
+
+```bash
+lgtmcli --url "https://<cluster>.grafana.net" --token "<grafana_service_account_token>" auth login
+```
+
+This validates credentials against Grafana and saves them locally for future commands.
+
+The saved file uses an extensible profiles schema (`schema_version`, `active_profile`, `profiles`) so additional per-profile settings can be added later without breaking existing configs.
+
+### Environment-based auth
 
 ```bash
 export GRAFANA_URL="https://<cluster>.grafana.net"
 export GRAFANA_TOKEN="<grafana_service_account_token>"
 ```
 
-Validate auth:
+Validate whichever source is active:
 
 ```bash
 lgtmcli auth status

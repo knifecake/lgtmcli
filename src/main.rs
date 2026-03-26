@@ -10,7 +10,7 @@ use std::process;
 use anyhow::Result;
 use clap::Parser;
 
-use app::AppContext;
+use app::{AppContext, AuthOverrides};
 use cli::{
     AuthCommands, Cli, Commands, DatasourceCommands, LogsCommands, MetricsCommands, SqlCommands,
     TracesCommands,
@@ -27,19 +27,25 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let output_mode = OutputMode::from_json_flag(cli.json);
+    let auth_overrides = AuthOverrides {
+        base_url: cli.grafana_url.clone(),
+        token: cli.grafana_token.clone(),
+    };
 
     match cli.command {
-        Commands::Auth { command } => {
-            let ctx = AppContext::from_env()?;
-            match command {
-                AuthCommands::Status => {
-                    let result = commands::auth::status(&ctx)?;
-                    output::emit(output_mode, &result)?;
-                }
+        Commands::Auth { command } => match command {
+            AuthCommands::Status => {
+                let ctx = AppContext::from_overrides(&auth_overrides)?;
+                let result = commands::auth::status(&ctx)?;
+                output::emit(output_mode, &result)?;
             }
-        }
+            AuthCommands::Login(args) => {
+                let result = commands::auth::login(&auth_overrides, args.no_verify)?;
+                output::emit(output_mode, &result)?;
+            }
+        },
         Commands::Datasources { command } => {
-            let ctx = AppContext::from_env()?;
+            let ctx = AppContext::from_overrides(&auth_overrides)?;
             match command {
                 DatasourceCommands::List { ds_type } => {
                     let result = commands::datasources::list(&ctx, ds_type)?;
@@ -48,7 +54,7 @@ fn run() -> Result<()> {
             }
         }
         Commands::Logs { command } => {
-            let ctx = AppContext::from_env()?;
+            let ctx = AppContext::from_overrides(&auth_overrides)?;
             match command {
                 LogsCommands::Query(args) => {
                     let result = commands::logs::query(&ctx, args)?;
@@ -61,7 +67,7 @@ fn run() -> Result<()> {
             }
         }
         Commands::Metrics { command } => {
-            let ctx = AppContext::from_env()?;
+            let ctx = AppContext::from_overrides(&auth_overrides)?;
             match command {
                 MetricsCommands::Query(args) => {
                     let result = commands::metrics::query(&ctx, args)?;
@@ -74,7 +80,7 @@ fn run() -> Result<()> {
             }
         }
         Commands::Traces { command } => {
-            let ctx = AppContext::from_env()?;
+            let ctx = AppContext::from_overrides(&auth_overrides)?;
             match command {
                 TracesCommands::Search(args) => {
                     let result = commands::traces::search(&ctx, args)?;
@@ -87,7 +93,7 @@ fn run() -> Result<()> {
             }
         }
         Commands::Sql { command } => {
-            let ctx = AppContext::from_env()?;
+            let ctx = AppContext::from_overrides(&auth_overrides)?;
             match command {
                 SqlCommands::Query(args) => {
                     let result = commands::sql::query(&ctx, args)?;

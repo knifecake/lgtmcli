@@ -15,9 +15,13 @@ git clone <repo-url>
 cd lgtmcli
 ```
 
-Set environment variables:
+Authenticate (choose one):
 
 ```bash
+# Option A: one-time login (saves profile at $XDG_CONFIG_HOME/lgtmcli/profiles.json, fallback ~/.config/lgtmcli/profiles.json)
+cargo run -- --url "https://<cluster>.grafana.net" --token "<grafana_service_account_token>" auth login
+
+# Option B: environment variables
 export GRAFANA_URL="https://<cluster>.grafana.net"
 export GRAFANA_TOKEN="<grafana_service_account_token>"
 ```

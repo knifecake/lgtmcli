@@ -299,12 +299,14 @@ fn ensure_grafana_success(status: StatusCode, body: &str, action: &str) -> Resul
     match status {
         s if s.is_success() => Ok(()),
         StatusCode::UNAUTHORIZED => {
-            bail!("HTTP 401 Unauthorized while {action}. Check GRAFANA_TOKEN.")
+            bail!("HTTP 401 Unauthorized while {action}. Check Grafana token credentials.")
         }
         StatusCode::FORBIDDEN => {
             bail!("HTTP 403 Forbidden while {action}. Token lacks required Grafana permissions.")
         }
-        StatusCode::NOT_FOUND => bail!("HTTP 404 Not Found while {action}. Check GRAFANA_URL."),
+        StatusCode::NOT_FOUND => {
+            bail!("HTTP 404 Not Found while {action}. Check Grafana base URL.")
+        }
         _ => {
             let snippet = truncate_for_log(body, 400);
             bail!(
