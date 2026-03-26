@@ -6,7 +6,7 @@ A fast CLI for querying Grafana-backed **logs, metrics, traces, and SQL datasour
 
 - readable table output by default
 - machine-readable `--json` output for scripts/agents
-- explicit datasource routing with `--ds <uid>`
+- explicit datasource routing with `--datasource <uid>` (short: `-d`)
 
 ### Why?
 
@@ -51,14 +51,19 @@ make install    # installs to ~/.local/bin/lgtmcli
 
 `lgtmcli` resolves credentials with this precedence:
 
-1. CLI flags: `--url`, `--token`
-2. Environment: `GRAFANA_URL`, `GRAFANA_TOKEN`
-3. Saved profile: `$XDG_CONFIG_HOME/lgtmcli/profiles.json` (fallback: `~/.config/lgtmcli/profiles.json`)
+1. Environment: `GRAFANA_URL`, `GRAFANA_TOKEN`
+2. Saved profile: `$XDG_CONFIG_HOME/lgtmcli/profiles.json` (fallback: `~/.config/lgtmcli/profiles.json`)
 
 ### Quick login (recommended)
 
 ```bash
-lgtmcli --url "https://<cluster>.grafana.net" --token "<grafana_service_account_token>" auth login
+# interactive prompt (token input is hidden)
+lgtmcli auth login
+
+# or set env vars first, then persist them to your local profile
+export GRAFANA_URL="https://<cluster>.grafana.net"
+export GRAFANA_TOKEN="<grafana_service_account_token>"
+lgtmcli auth login
 ```
 
 This validates credentials against Grafana and saves them locally for future commands.
@@ -86,23 +91,23 @@ A typical flow looks like this:
 
 ```bash
 # 1) Find the datasource UIDs you want to query
-lgtmcli ds list
+lgtmcli d list
 
 # 2) Pull recent logs from Loki
-lgtmcli logs query '{service="api"} |= "error"' --ds loki-prod --since 30m
+lgtmcli logs query '{service="api"} |= "error"' --datasource loki-prod --since 30m
 
 # 3) Turn logs into a time series (LogQL stats)
-lgtmcli logs stats 'rate({service="api"}[5m])' --ds loki-prod --since 1h --step 1m
+lgtmcli logs stats 'rate({service="api"}[5m])' --datasource loki-prod --since 1h --step 1m
 
 # 4) Check metrics from Prometheus/Mimir
-lgtmcli metrics range 'rate(http_requests_total[5m])' --ds mimir-prod --since 1h --step 30s
+lgtmcli metrics range 'rate(http_requests_total[5m])' --datasource mimir-prod --since 1h --step 30s
 
 # 5) Inspect traces from Tempo
-lgtmcli traces search '{ status = error }' --ds tempo-prod --since 1h --limit 20
+lgtmcli traces search '{ status = error }' --datasource tempo-prod --since 1h --limit 20
 
 # 6) Query SQL datasources
-lgtmcli sql tables --ds pg-read-replica
-lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds pg-read-replica
+lgtmcli sql tables --datasource pg-read-replica
+lgtmcli sql query 'select id, email from users order by id desc limit 20' --datasource pg-read-replica
 ```
 
 > SQL safety note: `lgtmcli` does not enforce read-only SQL statements client-side.
@@ -111,8 +116,8 @@ lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds p
 Use `--json` on any command when scripting:
 
 ```bash
-lgtmcli ds list --json
-lgtmcli traces search '{}' --ds tempo-prod --since 1h --json
+lgtmcli d list --json
+lgtmcli traces search '{}' --datasource tempo-prod --since 1h --json
 ```
 
 For time ranges, use either `--since <duration>` (for example `15m`, `1h`, `24h`) or explicit bounds with `--from <RFC3339> --to <RFC3339>`.

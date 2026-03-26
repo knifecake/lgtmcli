@@ -2,7 +2,7 @@ mod config;
 
 use anyhow::Result;
 
-pub use config::{AuthOverrides, ConfigSource, GrafanaConfig, resolve_auth_inputs, save_profile};
+pub use config::{ConfigSource, GrafanaConfig, resolve_auth_inputs, save_profile};
 
 use crate::grafana::client::GrafanaClient;
 
@@ -12,8 +12,8 @@ pub struct AppContext {
 }
 
 impl AppContext {
-    pub fn from_overrides(auth: &AuthOverrides) -> Result<Self> {
-        let config = GrafanaConfig::resolve(auth)?;
+    pub fn from_resolved_config() -> Result<Self> {
+        let config = GrafanaConfig::resolve()?;
         let grafana = GrafanaClient::new(config.clone())?;
 
         Ok(Self { config, grafana })

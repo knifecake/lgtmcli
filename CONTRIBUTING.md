@@ -18,13 +18,15 @@ cd lgtmcli
 Authenticate (choose one):
 
 ```bash
-# Option A: one-time login (saves profile at $XDG_CONFIG_HOME/lgtmcli/profiles.json, fallback ~/.config/lgtmcli/profiles.json)
-cargo run -- --url "https://<cluster>.grafana.net" --token "<grafana_service_account_token>" auth login
+# Option A: one-time login via secure prompts (saves profile at $XDG_CONFIG_HOME/lgtmcli/profiles.json, fallback ~/.config/lgtmcli/profiles.json)
+cargo run -- auth login
 
 # Option B: environment variables
 export GRAFANA_URL="https://<cluster>.grafana.net"
 export GRAFANA_TOKEN="<grafana_service_account_token>"
 ```
+
+Tip: to persist env credentials into the profile file, run `cargo run -- auth login` after exporting them.
 
 Verify auth:
 
@@ -66,7 +68,7 @@ When adding fields, prefer additive changes and avoid breaking existing JSON key
 ## Command design conventions
 
 - keep signal-specific commands (`logs`, `metrics`, `traces`, `sql`)
-- require explicit datasource selection (`--ds <uid>`) for reproducibility
+- require explicit datasource selection (`--datasource <uid>` / `-d <uid>`) for reproducibility
 - support range selection with either:
   - `--since <duration>`
   - `--from <rfc3339> --to <rfc3339>`

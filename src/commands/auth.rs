@@ -3,9 +3,7 @@ use std::io::{self, Write};
 use anyhow::{Context, Result, anyhow};
 use serde::Serialize;
 
-use crate::app::{
-    AppContext, AuthOverrides, ConfigSource, GrafanaConfig, resolve_auth_inputs, save_profile,
-};
+use crate::app::{AppContext, ConfigSource, GrafanaConfig, resolve_auth_inputs, save_profile};
 use crate::grafana::client::GrafanaClient;
 use crate::output::TableOutput;
 
@@ -39,8 +37,8 @@ pub fn status(ctx: &AppContext) -> Result<AuthStatusResult> {
     })
 }
 
-pub fn login(overrides: &AuthOverrides, no_verify: bool) -> Result<AuthLoginResult> {
-    let resolved = resolve_auth_inputs(overrides)?;
+pub fn login(no_verify: bool) -> Result<AuthLoginResult> {
+    let resolved = resolve_auth_inputs()?;
 
     let base_url = match resolved.base_url {
         Some(value) => value.value,
@@ -55,8 +53,8 @@ pub fn login(overrides: &AuthOverrides, no_verify: bool) -> Result<AuthLoginResu
     let config = GrafanaConfig {
         base_url: base_url.clone(),
         token,
-        url_source: ConfigSource::Flag,
-        token_source: ConfigSource::Flag,
+        url_source: ConfigSource::Prompt,
+        token_source: ConfigSource::Prompt,
     };
 
     let visible_datasources = if no_verify {
