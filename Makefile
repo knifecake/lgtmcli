@@ -4,7 +4,7 @@ INSTALL_DIR ?= $(HOME)/.local/bin
 
 .DEFAULT_GOAL := release
 
-.PHONY: release build lint test install
+.PHONY: release build lint test install uninstall
 
 # Default target (make): build release binary
 release:
@@ -30,3 +30,12 @@ install: release
 	cp target/release/$(BIN_NAME) $(INSTALL_DIR)/$(BIN_NAME)
 	chmod +x $(INSTALL_DIR)/$(BIN_NAME)
 	@echo "Installed $(BIN_NAME) to $(INSTALL_DIR)/$(BIN_NAME)"
+
+# make uninstall: remove installed binary from ~/.local/bin
+uninstall:
+	@if [ -f "$(INSTALL_DIR)/$(BIN_NAME)" ]; then \
+		rm -f "$(INSTALL_DIR)/$(BIN_NAME)"; \
+		echo "Removed $(INSTALL_DIR)/$(BIN_NAME)"; \
+	else \
+		echo "No installed binary found at $(INSTALL_DIR)/$(BIN_NAME)"; \
+	fi

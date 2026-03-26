@@ -34,6 +34,7 @@ cargo run -- auth status
 make build      # debug build
 make            # release build (default)
 make install    # install to ~/.local/bin/lgtmcli
+make uninstall  # remove ~/.local/bin/lgtmcli
 make lint       # fmt + check + clippy -D warnings
 make test       # run unit + integration tests
 ```

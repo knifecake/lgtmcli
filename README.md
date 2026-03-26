@@ -14,15 +14,33 @@ A fast CLI for querying Grafana-backed **logs, metrics, traces, and SQL datasour
 - One CLI surface for Loki, Prometheus/Mimir, Tempo, and SQL datasources
 - Script-friendly output contracts (`--json`)
 
-##  Install
+## Install
 
-### Preferred: installer script (stable)
+### Option 1: Download a release binary
+
+Download the archive for your OS/architecture from:
+
+- https://github.com/knifecake/lgtmcli/releases/latest
+
+Extract it and place `lgtmcli` somewhere on your `PATH` (for example `~/.local/bin`).
+
+### Option 2: Use the install script (same release artifacts, automated)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/knifecake/lgtmcli/master/scripts/install.sh | sh
 ```
 
-### Build and install locally
+By default, this installs to:
+
+- `~/.local/bin/lgtmcli`
+
+Override the install location if needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/knifecake/lgtmcli/master/scripts/install.sh | sh -s -- --install-dir /usr/local/bin
+```
+
+### Option 3: Build and install locally
 
 ```bash
 make            # release build (default target)
