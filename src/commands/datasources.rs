@@ -27,7 +27,7 @@ pub fn list(ctx: &AppContext, ds_type: Option<String>) -> Result<DatasourceListR
 
 fn filter_and_sort(mut datasources: Vec<DataSource>, ds_type: Option<&str>) -> Vec<DataSource> {
     if let Some(filter) = ds_type {
-        datasources.retain(|ds| ds.ds_type.eq_ignore_ascii_case(filter));
+        datasources.retain(|ds| datasource_type_matches(filter, &ds.ds_type));
     }
 
     datasources.sort_by_key(|ds| {
@@ -38,6 +38,20 @@ fn filter_and_sort(mut datasources: Vec<DataSource>, ds_type: Option<&str>) -> V
     });
 
     datasources
+}
+
+fn datasource_type_matches(filter: &str, ds_type: &str) -> bool {
+    normalize_datasource_type(filter) == normalize_datasource_type(ds_type)
+}
+
+fn normalize_datasource_type(value: &str) -> String {
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "postgres" | "postgresql" | "grafana-postgresql-datasource" => "postgres".to_string(),
+        "mysql" | "grafana-mysql-datasource" => "mysql".to_string(),
+        "mssql" | "sqlserver" | "grafana-mssql-datasource" => "mssql".to_string(),
+        _ => normalized,
+    }
 }
 
 impl TableOutput for DatasourceListResult {
@@ -116,5 +130,31 @@ mod tests {
         let ordered_uids: Vec<&str> = result.iter().map(|d| d.uid.as_str()).collect();
 
         assert_eq!(ordered_uids, vec!["loki-a", "loki-b", "prom-a", "prom-z"]);
+    }
+
+    #[test]
+    fn filter_postgres_matches_grafana_postgres_plugin_type() {
+        let input = vec![
+            ds(1, "pg-ro", "grafana-postgresql-datasource", "Postgres Read Only"),
+            ds(2, "loki-1", "loki", "Loki"),
+        ];
+
+        let result = filter_and_sort(input, Some("postgres"));
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].uid, "pg-ro");
+    }
+
+    #[test]
+    fn filter_plugin_type_matches_short_sql_alias() {
+        let input = vec![
+            ds(1, "pg-ro", "postgres", "Postgres Read Only"),
+            ds(2, "mimir", "prometheus", "Mimir"),
+        ];
+
+        let result = filter_and_sort(input, Some("grafana-postgresql-datasource"));
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].uid, "pg-ro");
     }
 }

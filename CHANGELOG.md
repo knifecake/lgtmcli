@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 - 2026-03-26
 
+- Add an `lgtmcli` agent skill at `skills/lgtmcli/SKILL.md` covering auth recovery, datasource discovery, SQL schema/table introspection, incident query examples, best practices, and `npx skills` installation
+- Update skill examples to prefer `-d` datasource shorthand for token-efficient agent usage
+- Fix datasource type filtering so `lgtmcli d list --type postgres` matches Grafana's `grafana-postgresql-datasource` type alias
 - Add low-friction auth login flow (`auth login`) with saved profile support (XDG config path), extensible profiles file schema, and credential precedence: env vars > profile
 - Add Linux arm64 release artifact and installer support
 - Drop macOS x86_64 release artifacts (Apple Silicon only)
