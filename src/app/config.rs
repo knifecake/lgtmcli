@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -160,8 +161,7 @@ pub fn save_profile(base_url: &str, token: &str) -> Result<PathBuf> {
 
     let payload =
         serde_json::to_string_pretty(&profiles).context("failed to encode profile JSON")?;
-    fs::write(&path, payload)
-        .with_context(|| format!("failed to write profile file {}", path.display()))?;
+    write_profile_payload(&path, &payload)?;
 
     Ok(path)
 }
@@ -371,6 +371,35 @@ fn sanitize_non_empty(value: String, field_name: &str) -> Result<String> {
         bail!("{field_name} is set but empty");
     }
     Ok(trimmed)
+}
+
+#[cfg(unix)]
+fn write_profile_payload(path: &Path, payload: &str) -> Result<()> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("failed to open profile file {}", path.display()))?;
+
+    file.write_all(payload.as_bytes())
+        .with_context(|| format!("failed to write profile file {}", path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("failed to sync profile file {}", path.display()))?;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("failed to set profile file permissions {}", path.display()))?;
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_profile_payload(path: &Path, payload: &str) -> Result<()> {
+    fs::write(path, payload)
+        .with_context(|| format!("failed to write profile file {}", path.display()))
 }
 
 fn default_schema_version() -> u32 {

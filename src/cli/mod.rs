@@ -257,7 +257,7 @@ pub struct TraceGetArgs {
     after_help = "EXAMPLES:\n  lgtmcli sql schemas --ds pg-read-replica\n  lgtmcli sql schemas --ds pg-read-replica --like pub%\n  lgtmcli sql tables --ds pg-read-replica\n  lgtmcli sql tables --ds pg-read-replica --schema public --like user%\n  lgtmcli sql describe users --ds pg-read-replica\n  lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds pg-read-replica"
 )]
 pub enum SqlCommands {
-    /// Run a read-only SQL query against SQL datasources (postgres/mysql/mssql)
+    /// Run a SQL query against SQL datasources (postgres/mysql/mssql)
     Query(SqlQueryArgs),
     /// List schemas/catalog namespaces from a SQL datasource
     Schemas(SqlSchemasArgs),
@@ -269,7 +269,7 @@ pub enum SqlCommands {
 
 #[derive(Debug, Clone, Args)]
 pub struct SqlQueryArgs {
-    /// SQL query (read-only)
+    /// SQL query
     pub query: String,
 
     /// SQL datasource UID (Grafana datasource UID)

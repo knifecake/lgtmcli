@@ -2,6 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 use assert_cmd::Command;
 use httpmock::Method::{GET, POST};
 use httpmock::MockServer;
@@ -268,6 +271,44 @@ fn auth_login_saves_profile_and_allows_followup_status_without_env() {
         .stdout(predicate::str::contains("Token source: saved profile"));
 
     status_mock.assert();
+}
+
+#[cfg(unix)]
+#[test]
+fn auth_login_hardens_profile_file_permissions() {
+    use std::fs::Permissions;
+
+    let home = make_temp_home("login-hardens-permissions");
+    write_profile(&home, "https://example.invalid", "old-token");
+
+    let profile_path = home.join(".config/lgtmcli/profiles.json");
+    fs::set_permissions(&profile_path, Permissions::from_mode(0o644))
+        .expect("set insecure permissions");
+
+    let mut login_cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    login_cmd
+        .env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("GRAFANA_URL")
+        .env_remove("GRAFANA_TOKEN")
+        .args([
+            "--url",
+            "https://example.invalid",
+            "--token",
+            "new-token",
+            "auth",
+            "login",
+            "--no-verify",
+        ])
+        .assert()
+        .success();
+
+    let mode = fs::metadata(&profile_path)
+        .expect("profile metadata")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600);
 }
 
 #[test]

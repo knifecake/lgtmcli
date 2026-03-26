@@ -104,6 +104,10 @@ lgtmcli traces search '{ status = error }' --ds tempo-prod --since 1h --limit 20
 lgtmcli sql tables --ds pg-read-replica
 lgtmcli sql query 'select id, email from users order by id desc limit 20' --ds pg-read-replica
 ```
+
+> SQL safety note: `lgtmcli` does not enforce read-only SQL statements client-side.
+> Configure Grafana SQL datasources with read-only database credentials.
+
 Use `--json` on any command when scripting:
 
 ```bash
