@@ -304,6 +304,41 @@ fn datasources_list_json_applies_type_filter() {
 }
 
 #[test]
+fn datasources_list_json_maps_postgres_type_alias() {
+    let server = MockServer::start();
+    let datasource_mock = server.mock(|when, then| {
+        when.method(GET).path("/api/datasources");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"[
+                    {"id": 1, "uid": "pg-ro", "name": "Postgres RO", "type": "grafana-postgresql-datasource", "isDefault": false},
+                    {"id": 2, "uid": "loki-prod", "name": "Loki Prod", "type": "loki", "isDefault": true}
+                ]"#,
+            );
+    });
+
+    let mut cmd = Command::cargo_bin("lgtmcli").expect("binary exists");
+    cmd.env("GRAFANA_URL", server.url(""))
+        .env("GRAFANA_TOKEN", "test-token")
+        .args(["d", "list", "--type", "postgres", "--json"]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let payload: Value = serde_json::from_str(&stdout).expect("valid json output");
+
+    assert_eq!(payload["ds_type"], "postgres");
+    assert_eq!(payload["count"], 1);
+    assert_eq!(payload["datasources"][0]["uid"], "pg-ro");
+    assert_eq!(
+        payload["datasources"][0]["type"],
+        "grafana-postgresql-datasource"
+    );
+
+    datasource_mock.assert();
+}
+
+#[test]
 fn logs_query_json_returns_lines() {
     let server = MockServer::start();
     let logs_mock = server.mock(|when, then| {
