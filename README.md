@@ -129,6 +129,10 @@ lgtmcli --help
 lgtmcli <command> --help
 ```
 
+## Alternatives
+
+- Check out [grafana-cli](https://github.com/matiasvillaverde/grafana-cli) for a much more rich and feature complete interface 🚀
+
 
 ## Contributing
 
