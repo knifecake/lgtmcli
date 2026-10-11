@@ -1,5 +1,10 @@
 # lgtmcli
 
+> [!IMPORTANT]
+> This project is no longer maintained. Grafana now provides [`gcx`](https://github.com/grafana/gcx), its official CLI for querying telemetry and managing Grafana resources. Use [`gcx`](https://grafana.com/docs/grafana/latest/as-code/observability-as-code/grafana-cli/gcx/) for new workflows.
+
+## Historical documentation
+
 A fast CLI for querying Grafana-backed **logs, metrics, traces, and SQL datasources** from your terminal.
 
 `lgtmcli` is optimized for both humans and automation:
@@ -128,11 +133,6 @@ For the complete command reference, run:
 lgtmcli --help
 lgtmcli <command> --help
 ```
-
-## Alternatives
-
-- Check out [grafana-cli](https://github.com/matiasvillaverde/grafana-cli) for a much more rich and feature complete interface 🚀
-
 
 ## Contributing
 
