@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Mark the project as unmaintained and direct new users to Grafana's official [`gcx`](https://github.com/grafana/gcx) CLI
+
 ## v0.2.0 - 2026-03-26
 
 - Add an `lgtmcli` agent skill at `skills/lgtmcli/SKILL.md` covering auth recovery, datasource discovery, SQL schema/table introspection, incident query examples, best practices, and `npx skills` installation
